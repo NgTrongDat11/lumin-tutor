@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { paymentApi } from '../../services/api';
-import type { PaymentResponse, PaymentStatus } from '../../types';
+import { paymentApi, classApi } from '../../services/api';
+import type { PaymentResponse, ClassRegistrationResponse } from '../../types';
 import { getStatusBadge } from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import { PageLoading } from '../../components/ui/Spinner';
@@ -9,20 +9,29 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { WalletIcon, ClipboardCheckIcon } from '../../components/ui/Icons';
 import { EmptyPanel, MetricTile, PortalPage, SectionPanel } from '../../components/portal/PortalPage';
 import QRPaymentModal from '../../components/payment/QRPaymentModal';
+import { LearningDetailModal } from '../../components/learning/LearningDetailModal';
 
 export default function StudentPayments() {
   const [payments, setPayments] = useState<PaymentResponse[]>([]);
+  const [registrations, setRegistrations] = useState<ClassRegistrationResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState<number | null>(null);
   const [confirmPayId, setConfirmPayId] = useState<number | null>(null);
   const [qrPayment, setQrPayment] = useState<PaymentResponse | null>(null);
   const [cancelling, setCancelling] = useState<number | null>(null);
   const [confirmCancelId, setConfirmCancelId] = useState<number | null>(null);
-  const [filter, setFilter] = useState<'ALL' | PaymentStatus>('ALL');
+  const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'SUCCEEDED'>('ALL');
+  const [detailTarget, setDetailTarget] = useState<{ type: 'CLASS' | 'PRIVATE', id: number } | null>(null);
   const { toast } = useToast();
 
   const load = useCallback(() => {
-    paymentApi.list().then(setPayments).catch(() => {}).finally(() => setLoading(false));
+    Promise.all([
+      paymentApi.list().catch(() => []),
+      classApi.myRegistrations().catch(() => [])
+    ]).then(([payList, regList]) => {
+      setPayments(payList);
+      setRegistrations(regList);
+    }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -73,16 +82,31 @@ export default function StudentPayments() {
 
   const filteredPayments = useMemo(() => {
     if (filter === 'ALL') return payments;
+    if (filter === 'PENDING') {
+      return payments.filter((p) => p.status === 'PENDING' || p.status === 'CREATED');
+    }
     return payments.filter((p) => p.status === filter);
   }, [payments, filter]);
 
   const stats = useMemo(() => {
     return {
       totalPaid: payments.filter(p => p.status === 'SUCCEEDED').reduce((sum, p) => sum + parseFloat(p.amount), 0),
-      totalPending: payments.filter(p => p.status === 'PENDING' || p.status === 'CREATED').reduce((sum, p) => sum + parseFloat(p.amount), 0),
-      totalRefunded: payments.filter(p => p.status === 'REFUNDED').reduce((sum, p) => sum + (p.refund_amount ? parseFloat(p.refund_amount) : 0), 0)
+      totalPending: payments.filter(p => p.status === 'PENDING' || p.status === 'CREATED').reduce((sum, p) => sum + parseFloat(p.amount), 0)
     };
   }, [payments]);
+
+  const getModalTarget = useCallback((payment: PaymentResponse): { type: 'CLASS' | 'PRIVATE', id: number } | null => {
+    if (payment.target_type === 'PRIVATE_TUTORING_REQUEST') {
+      return { type: 'PRIVATE', id: payment.target_id };
+    }
+    if (payment.target_type === 'CLASS_REGISTRATION') {
+      const reg = registrations.find(r => r.id === payment.target_id);
+      if (reg) {
+        return { type: 'CLASS', id: reg.class_id };
+      }
+    }
+    return null;
+  }, [registrations]);
 
   const formatCurrency = (amount: number) => `${amount.toLocaleString('vi-VN')}đ`;
 
@@ -95,7 +119,7 @@ export default function StudentPayments() {
     >
       {/* Stats */}
       {payments.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2">
           <MetricTile 
             icon={WalletIcon} 
             label="Đã thanh toán" 
@@ -108,12 +132,6 @@ export default function StudentPayments() {
             value={formatCurrency(stats.totalPending)} 
             tone="warning" 
           />
-          <MetricTile 
-            icon={WalletIcon} 
-            label="Đã hoàn tiền" 
-            value={formatCurrency(stats.totalRefunded)} 
-            tone="neutral" 
-          />
         </div>
       )}
 
@@ -123,7 +141,7 @@ export default function StudentPayments() {
           description={`${filteredPayments.length} giao dịch.`}
           action={
             <div className="flex gap-1 rounded-lg border border-border-light bg-surface-secondary p-1">
-              {(['ALL', 'PENDING', 'SUCCEEDED', 'REFUNDED'] as const).map(f => (
+              {(['ALL', 'PENDING', 'SUCCEEDED'] as const).map(f => (
                 <button
                   key={f}
                   type="button"
@@ -132,7 +150,7 @@ export default function StudentPayments() {
                     filter === f ? 'bg-white text-text-primary shadow-xs' : 'text-text-secondary hover:bg-white/70'
                   }`}
                 >
-                  {f === 'ALL' ? 'Tất cả' : f === 'PENDING' ? 'Chờ thanh toán' : f === 'SUCCEEDED' ? 'Đã thanh toán' : 'Hoàn tiền'}
+                  {f === 'ALL' ? 'Tất cả' : f === 'PENDING' ? 'Chờ thanh toán' : 'Đã thanh toán'}
                 </button>
               ))}
             </div>
@@ -142,38 +160,70 @@ export default function StudentPayments() {
             <EmptyPanel title="Không có giao dịch phù hợp" />
           ) : (
             <div className="space-y-3">
-              {filteredPayments.map((p) => (
-                <article key={p.id} className="rounded-lg border border-border-light bg-white p-4 transition-colors hover:border-primary-300">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-bold text-text-primary">
-                          {parseFloat(p.amount).toLocaleString('vi-VN')}đ
-                        </h3>
-                        {getStatusBadge(p.status)}
+              {filteredPayments.map((p) => {
+                const target = getModalTarget(p);
+                return (
+                  <article key={p.id} className="rounded-xl border border-border-light bg-white p-5 transition-all duration-200 hover:border-primary-300 hover:shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2.5">
+                          <h3 className="text-xl font-extrabold text-text-primary">
+                            {parseFloat(p.amount).toLocaleString('vi-VN')}đ
+                          </h3>
+                          {getStatusBadge(p.status)}
+                        </div>
+                        <p className="text-base font-bold text-text-secondary">
+                          {p.subject_name ? `${p.subject_name} — ` : ''}{p.tutor_name || 'Hệ thống'}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-tertiary">
+                          <span className="font-semibold px-2 py-0.5 rounded-full bg-surface-secondary text-xs">
+                            {p.target_type === 'PRIVATE_TUTORING_REQUEST' ? '🤝 Yêu cầu 1-1' : '👥 Đăng ký lớp'}
+                          </span>
+                          <span>·</span>
+                          <span className="font-medium text-text-secondary">{p.target_name || `#${p.target_id}`}</span>
+                        </div>
+                        {p.paid_at && (
+                          <p className="text-xs text-text-tertiary flex items-center gap-1 mt-1">
+                            <span>📅 Thanh toán:</span>
+                            <span className="font-medium">{new Date(p.paid_at).toLocaleString('vi-VN')}</span>
+                          </p>
+                        )}
                       </div>
-                      <p className="text-base font-medium text-text-secondary">
-                        {p.subject_name ? `${p.subject_name} — ` : ''}{p.tutor_name || 'Hệ thống'}
-                      </p>
-                      <p className="text-sm text-text-tertiary">
-                        {p.target_type === 'PRIVATE_TUTORING_REQUEST' ? '🤝 Yêu cầu 1-1' : '👥 Đăng ký lớp'}{' '}
-                        · {p.target_name || `#${p.target_id}`}
-                      </p>
-                      {p.paid_at && <p className="text-xs text-text-tertiary">Thanh toán: {new Date(p.paid_at).toLocaleString('vi-VN')}</p>}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {target && (
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            onClick={() => setDetailTarget(target)}
+                            className="border-border-light text-text-secondary hover:bg-surface-secondary"
+                          >
+                            Xem chi tiết
+                          </Button>
+                        )}
+                        {(p.status === 'CREATED' || p.status === 'PENDING') && (
+                          <>
+                            <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              onClick={() => setConfirmCancelId(p.id)} 
+                              className="text-danger-600 hover:bg-danger-50"
+                            >
+                              Hủy
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              onClick={() => openPaymentFlow(p)}
+                              className="shadow-sm"
+                            >
+                              {p.provider?.toUpperCase() === 'SEPAY' ? 'Quét QR' : 'Thanh toán'}
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    {(p.status === 'CREATED' || p.status === 'PENDING') && (
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => setConfirmCancelId(p.id)} className="text-danger-600 hover:bg-danger-50">
-                          Hủy
-                        </Button>
-                        <Button size="sm" onClick={() => openPaymentFlow(p)}>
-                          {p.provider?.toUpperCase() === 'SEPAY' ? 'Quét QR' : 'Thanh toán'}
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           )}
         </SectionPanel>
@@ -208,6 +258,11 @@ export default function StudentPayments() {
         description="Bạn có chắc chắn muốn hủy giao dịch này không? Thao tác này không thể hoàn tác."
         confirmText="Hủy giao dịch"
         loading={cancelling === confirmCancelId}
+      />
+
+      <LearningDetailModal
+        target={detailTarget}
+        onClose={() => setDetailTarget(null)}
       />
     </PortalPage>
   );
