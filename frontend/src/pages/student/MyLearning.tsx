@@ -6,12 +6,11 @@ import { PortalPage, SegmentedTabs, EmptyPanel } from '../../components/portal/P
 import { getStatusBadge } from '../../components/ui/Badge';
 import { PageLoading } from '../../components/ui/Spinner';
 import Button from '../../components/ui/Button';
-import Modal from '../../components/ui/Modal';
+
 import Avatar from '../../components/ui/Avatar';
-import { UsersIcon, CalendarIcon, CheckCircleIcon, ClockIcon } from '../../components/ui/Icons';
+import { UsersIcon, CalendarIcon, CheckCircleIcon } from '../../components/ui/Icons';
 import QRPaymentModal from '../../components/payment/QRPaymentModal';
 import { useToast } from '../../components/ui/Toast';
-import { LearningDetailModal } from '../../components/learning/LearningDetailModal';
 
 function toCurrency(value: string | number | null | undefined) {
   if (value == null) return '0đ';
@@ -29,7 +28,7 @@ export default function StudentMyLearning() {
   const requestedTab = searchParams.get('tab');
   const defaultTab: Tab = requestedTab === 'CLASS' || requestedTab === 'HISTORY' ? requestedTab : 'PRIVATE';
   const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
-  const [detailTarget, setDetailTarget] = useState<{ type: 'CLASS' | 'PRIVATE', id: number } | null>(null);
+
 
   const [requests, setRequests] = useState<PrivateRequestResponse[]>([]);
   const [myClasses, setMyClasses] = useState<ClassRegistrationResponse[]>([]);
@@ -108,6 +107,7 @@ export default function StudentMyLearning() {
       title="Lớp của tôi"
       description="Theo dõi và quản lý toàn bộ các khóa học và yêu cầu gia sư 1-1 của bạn tại đây."
     >
+
       <SegmentedTabs
         value={activeTab}
         onChange={setActiveTab}
@@ -135,7 +135,6 @@ export default function StudentMyLearning() {
                     request={req}
                     onAction={(path) => navigate(path)}
                     onPayNow={() => handlePayNow('PRIVATE_TUTORING_REQUEST', req.id)}
-                    onDetails={() => setDetailTarget({ type: 'PRIVATE', id: req.id })}
                     payLoading={payLoading === `PRIVATE_TUTORING_REQUEST_${req.id}`}
                   />
                 ))}
@@ -160,7 +159,6 @@ export default function StudentMyLearning() {
                     reg={reg}
                     onAction={(path) => navigate(path)}
                     onPayNow={() => handlePayNow('CLASS_REGISTRATION', reg.id)}
-                    onDetails={() => setDetailTarget({ type: 'CLASS', id: reg.class_id })}
                     payLoading={payLoading === `CLASS_REGISTRATION_${reg.id}`}
                   />
                 ))}
@@ -178,14 +176,7 @@ export default function StudentMyLearning() {
         )}
       </div>
 
-
-      <LearningDetailModal 
-        target={detailTarget} 
-        onClose={() => setDetailTarget(null)} 
-      />
-
       <QRPaymentModal
-
         open={qrPayment !== null}
         payment={qrPayment}
         onClose={() => setQrPayment(null)}
@@ -252,7 +243,7 @@ function SessionHistoryTab({
 }) {
   const [typeFilter, setTypeFilter] = useState<SessionTypeFilter>('ALL');
   const [historyFilter, setHistoryFilter] = useState<LearningHistoryFilter>('ALL');
-  const [selectedItem, setSelectedItem] = useState<LearningHistoryItem | null>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const historyItems = useMemo(() => {
     const sessionsByClass = new Map<number, LearningSessionResponse[]>();
@@ -301,129 +292,73 @@ function SessionHistoryTab({
     });
   }, [myClasses, requests, sessions]);
 
-  const stats = useMemo(() => {
-    const itemsWithHistory = historyItems.filter((item) => item.sessions.length > 0);
-    let itemsWithSessions = 0;
-    let needsAttendance = 0;
-
-    itemsWithHistory.forEach((item) => {
-      if (item.sessions.length > 0) itemsWithSessions += 1;
-      item.sessions.forEach((session) => {
-        if (isAttendanceNeededSession(session)) needsAttendance += 1;
-      });
-    });
-
-    return {
-      totalItems: itemsWithHistory.length,
-      itemsWithSessions,
-      needsAttendance,
-    };
-  }, [historyItems]);
-
   const filteredItems = useMemo(() => {
     return historyItems.filter((item) => {
       if (item.sessions.length === 0) return false;
-
       if (typeFilter !== 'ALL' && item.type !== typeFilter) return false;
       if (historyFilter === 'IN_PROGRESS') return item.sessions.some(isUpcomingScheduledSession);
       if (historyFilter === 'NEEDS_ATTENDANCE') return item.sessions.some(isAttendanceNeededSession);
       if (historyFilter === 'COMPLETED') {
-        const completedCount = item.sessions.filter((session) => session.status === 'COMPLETED').length;
+        const completedCount = item.sessions.filter((s) => s.status === 'COMPLETED').length;
         if (item.expectedSessions != null) {
-          // Có tổng buổi rõ ràng: so sánh trực tiếp
           return item.expectedSessions > 0 && completedCount >= item.expectedSessions;
         }
-        // Không có tổng buổi: dựa vào sourceStatus của entity cha
         return ['COMPLETED', 'PAID'].includes(item.sourceStatus) && completedCount > 0;
       }
       return true;
     });
   }, [historyFilter, historyItems, typeFilter]);
 
-  if (historyItems.length === 0) {
+  if (historyItems.filter((i) => i.sessions.length > 0).length === 0) {
     return (
       <EmptyPanel
-        title="Chưa có lớp học nào"
-        description="Các lớp nhóm và yêu cầu học 1-1 của bạn sẽ xuất hiện ở đây sau khi đăng ký hoặc gửi yêu cầu."
+        title="Chưa có lịch sử học"
+        description="Các lớp nhóm và yêu cầu học 1-1 có buổi học sẽ xuất hiện ở đây."
       />
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-3">
-        <HistoryMetricCard label="Lớp / yêu cầu" value={stats.totalItems} icon={CalendarIcon} />
-        <HistoryMetricCard label="Đã có lịch học" value={stats.itemsWithSessions} icon={CheckCircleIcon} tone="success" />
-        <HistoryMetricCard label="Chờ cập nhật điểm danh" value={stats.needsAttendance} icon={ClockIcon} tone="warning" />
-      </div>
-
-      <div className="flex flex-col gap-3 rounded-2xl border border-border-light bg-white p-4 shadow-sm lg:flex-row lg:items-center">
+    <div className="space-y-4">
+      {/* Filter bar — compact single row */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-border-light bg-white px-4 py-3 shadow-sm">
         <FilterButtonGroup
           label="Loại"
           options={sessionTypeFilters}
           value={typeFilter}
           onChange={setTypeFilter}
         />
+        <div className="h-4 w-px bg-border-light hidden sm:block" />
         <FilterButtonGroup
           label="Tiến độ"
           options={learningHistoryFilters}
           value={historyFilter}
           onChange={setHistoryFilter}
         />
-        <span className="text-sm font-semibold text-text-tertiary lg:ml-auto">
-          {filteredItems.length} lớp/yêu cầu
+        <span className="ml-auto text-xs font-semibold text-text-tertiary">
+          {filteredItems.length} kết quả
         </span>
       </div>
 
       {filteredItems.length === 0 ? (
-        <EmptyPanel title="Không có lớp học phù hợp" />
+        <EmptyPanel title="Không có kết quả phù hợp" />
       ) : (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="space-y-3">
           {filteredItems.map((item) => (
-            <LearningHistoryCard
+            <LearningHistoryAccordion
               key={item.key}
               item={item}
-              onOpen={() => setSelectedItem(item)}
+              expanded={expandedKey === item.key}
+              onToggle={() => setExpandedKey(expandedKey === item.key ? null : item.key)}
             />
           ))}
         </div>
       )}
-
-      <LearningHistorySessionsModal
-        item={selectedItem}
-        onClose={() => setSelectedItem(null)}
-      />
     </div>
   );
 }
 
-function HistoryMetricCard({
-  label,
-  value,
-  icon: Icon,
-  tone = 'default',
-}: {
-  label: string;
-  value: number;
-  icon: typeof CalendarIcon;
-  tone?: 'default' | 'success' | 'warning';
-}) {
-  const toneClass = tone === 'success'
-    ? 'border-success-100 bg-success-50 text-success-700'
-    : tone === 'warning'
-      ? 'border-warning-100 bg-warning-50 text-warning-700'
-      : 'border-border-light bg-white text-text-primary';
-
-  return (
-    <div className={`rounded-2xl border p-5 shadow-sm ${toneClass}`}>
-      <Icon className="mb-3 h-5 w-5" />
-      <p className="text-3xl font-extrabold leading-none">{value}</p>
-      <p className="mt-2 text-xs font-bold uppercase tracking-[0.14em] text-text-tertiary">{label}</p>
-    </div>
-  );
-}
-
-function FilterButtonGroup<T extends string>({
+function FilterButtonGroup<T extends string,>({
   label,
   options,
   value,
@@ -435,15 +370,15 @@ function FilterButtonGroup<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-      <span className="text-xs font-bold uppercase tracking-[0.14em] text-text-tertiary">{label}</span>
+    <div className="flex items-center gap-2">
+      <span className="shrink-0 text-xs font-bold uppercase tracking-[0.14em] text-text-tertiary">{label}:</span>
       <div className="flex flex-wrap gap-1 rounded-xl border border-border-light bg-surface-secondary p-1">
         {options.map((option) => (
           <button
             key={option.value}
             type="button"
             onClick={() => onChange(option.value)}
-            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+            className={`rounded-lg px-3 py-1 text-xs font-bold transition-colors ${
               value === option.value
                 ? 'bg-white text-primary-700 shadow-sm'
                 : 'text-text-secondary hover:bg-white/70 hover:text-text-primary'
@@ -462,7 +397,7 @@ function getLatestSessionTime(sessions: LearningSessionResponse[]) {
 }
 
 function getSortedSessions(sessions: LearningSessionResponse[]) {
-  return sessions.slice().sort((a, b) => getSessionDateTime(b).getTime() - getSessionDateTime(a).getTime());
+  return sessions.slice().sort((a, b) => getSessionDateTime(a).getTime() - getSessionDateTime(b).getTime());
 }
 
 function getHistoryItemMetrics(item: LearningHistoryItem) {
@@ -478,160 +413,206 @@ function getHistoryItemMetrics(item: LearningHistoryItem) {
     if (isUpcomingScheduledSession(session)) upcoming += 1;
   });
 
-  return {
-    completed,
-    cancelledOrAbsent,
-    needsAttendance,
-    upcoming,
-    scheduled: item.sessions.length,
-    expected: item.expectedSessions,
-  };
+  return { completed, cancelledOrAbsent, needsAttendance, upcoming, scheduled: item.sessions.length, expected: item.expectedSessions };
 }
 
-function LearningHistoryCard({ item, onOpen }: { item: LearningHistoryItem; onOpen: () => void }) {
+// ── Accordion row: summary + inline expand ────────────────
+function LearningHistoryAccordion({
+  item,
+  expanded,
+  onToggle,
+}: {
+  item: LearningHistoryItem;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   const metrics = getHistoryItemMetrics(item);
   const sortedSessions = getSortedSessions(item.sessions);
-  const latestSession = sortedSessions[0] ?? null;
-  const nextSession = sortedSessions.slice().reverse().find(isUpcomingScheduledSession);
+  const nextSession = sortedSessions.find(isUpcomingScheduledSession);
+  const lastCompleted = [...sortedSessions].reverse().find((s) => s.status === 'COMPLETED');
   const typeLabel = item.type === 'CLASS' ? 'Lớp nhóm' : 'Học 1-1';
-  const progressLabel = metrics.expected
-    ? `${metrics.completed}/${metrics.expected} buổi đã học`
-    : `${metrics.completed} buổi đã học`;
+  const progressPct = item.expectedSessions
+    ? Math.min(100, Math.round((metrics.completed / item.expectedSessions) * 100))
+    : null;
+
+  const isCompleted = item.expectedSessions != null
+    ? (item.expectedSessions > 0 && metrics.completed >= item.expectedSessions)
+    : (['COMPLETED', 'PAID'].includes(item.sourceStatus) && metrics.completed > 0);
 
   return (
-    <article className="flex flex-col rounded-2xl border border-border-light bg-white p-5 shadow-sm transition-all hover:border-primary-200 hover:shadow-md">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-primary-600">{typeLabel}</p>
-          <h4 className="line-clamp-2 text-lg font-bold text-text-primary">{item.title}</h4>
-        </div>
-        <div className="shrink-0">{getStatusBadge(item.sourceStatus)}</div>
-      </div>
+    <div className={`overflow-hidden rounded-2xl border transition-all ${
+      isCompleted
+        ? `bg-slate-50/60 border-slate-200/80 ${expanded ? 'border-slate-300' : 'hover:border-slate-300'}`
+        : `bg-white border-border-light ${expanded ? 'border-primary-200' : 'hover:border-primary-100'}`
+    }`}>
+      {/* ── Header row (always visible) ── */}
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full text-left"
+        aria-expanded={expanded}
+      >
+        <div className="flex items-center gap-4 px-5 py-4">
+          {/* Left: icon + type pill */}
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+            isCompleted ? 'bg-blue-100/70' : 'bg-primary-50'
+          }`}>
+            {isCompleted ? (
+              <CheckCircleIcon className="h-5 w-5 text-blue-600" />
+            ) : item.type === 'CLASS' ? (
+              <UsersIcon className="h-5 w-5 text-primary-600" />
+            ) : (
+              <CalendarIcon className="h-5 w-5 text-primary-600" />
+            )}
+          </div>
 
-      <div className="mt-4 flex items-center gap-2 text-sm text-text-secondary">
-        <Avatar name={item.tutorName || 'Gia sư'} size="sm" />
-        <span className="font-semibold">{item.tutorName || 'Chưa có gia sư'}</span>
-      </div>
-
-      <div className="mt-5 grid gap-3 sm:grid-cols-3">
-        <HistoryMiniStat label="Đã học" value={metrics.completed} tone="success" />
-        <HistoryMiniStat label="Đã lên lịch" value={metrics.scheduled} />
-        <HistoryMiniStat label="Chờ cập nhật" value={metrics.needsAttendance} tone="warning" />
-      </div>
-
-      <div className="mt-5 rounded-xl border border-border-light bg-surface-secondary/70 p-4">
-        <p className="text-sm font-bold text-text-primary">{progressLabel}</p>
-        <p className="mt-1 text-sm text-text-tertiary">
-          {nextSession
-            ? `Buổi tiếp theo: ${formatSessionDateTime(nextSession)}`
-            : latestSession
-              ? `Buổi gần nhất: ${formatSessionDateTime(latestSession)}`
-              : 'Chưa có lịch học cho lớp/yêu cầu này.'}
-        </p>
-      </div>
-
-      <div className="mt-5 flex items-center justify-between gap-3">
-        <span className="text-sm text-text-tertiary">
-          {metrics.cancelledOrAbsent > 0 ? `${metrics.cancelledOrAbsent} buổi hủy/vắng` : `${item.sessions.length} buổi trong lịch`}
-        </span>
-        <Button size="sm" variant="outline" onClick={onOpen}>
-          Xem buổi học
-        </Button>
-      </div>
-    </article>
-  );
-}
-
-function HistoryMiniStat({
-  label,
-  value,
-  tone = 'default',
-}: {
-  label: string;
-  value: number;
-  tone?: 'default' | 'success' | 'warning';
-}) {
-  const toneClass = tone === 'success'
-    ? 'bg-success-50 text-success-700'
-    : tone === 'warning'
-      ? 'bg-warning-50 text-warning-700'
-      : 'bg-surface-secondary text-text-primary';
-
-  return (
-    <div className={`rounded-xl px-3 py-2 ${toneClass}`}>
-      <p className="text-lg font-extrabold leading-none">{value}</p>
-      <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-text-tertiary">{label}</p>
-    </div>
-  );
-}
-
-function LearningHistorySessionsModal({ item, onClose }: { item: LearningHistoryItem | null; onClose: () => void }) {
-  if (!item) return null;
-
-  const sortedSessions = getSortedSessions(item.sessions);
-
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title="Các buổi học"
-      size="lg"
-      footer={<Button variant="ghost" onClick={onClose}>Đóng</Button>}
-    >
-      <div className="space-y-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-primary-600">
-              {item.type === 'CLASS' ? 'Lớp nhóm' : 'Học 1-1'}
+          {/* Center: title + meta */}
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                isCompleted ? 'bg-slate-200/70 text-slate-600' : 'bg-primary-50 text-primary-600'
+              }`}>
+                {typeLabel}
+              </span>
+              {isCompleted ? (
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-800">
+                  ✓ Hoàn thành
+                </span>
+              ) : (
+                getStatusBadge(item.sourceStatus)
+              )}
+            </div>
+            <p className={`mt-1 truncate text-base font-bold ${isCompleted ? 'text-text-secondary' : 'text-text-primary'}`}>{item.title}</p>
+            <p className="mt-0.5 text-sm text-text-secondary">
+              {item.tutorName || 'Chưa có gia sư'}
+              {item.expectedSessions ? ` · ${metrics.completed}/${item.expectedSessions} buổi` : ` · ${metrics.completed} buổi đã học`}
+              {nextSession && (
+                <span className="ml-2 text-primary-600 font-semibold">
+                  · Tiếp: {formatShortDate(nextSession.session_date)} {nextSession.start_time.slice(0, 5)}
+                </span>
+              )}
             </p>
-            <h3 className="text-xl font-bold text-text-primary">{item.title}</h3>
-            <p className="mt-1 text-sm text-text-tertiary">{item.tutorName || 'Chưa có gia sư'}</p>
           </div>
-          {getStatusBadge(item.sourceStatus)}
-        </div>
 
-        {sortedSessions.length === 0 ? (
-          <EmptyPanel
-            title="Chưa có buổi học nào"
-            description="Khi gia sư hoặc staff tạo lịch, các buổi học của lớp/yêu cầu này sẽ xuất hiện ở đây."
-          />
-        ) : (
-          <div className="space-y-3">
-            {sortedSessions.map((session) => (
-              <CompactSessionRow key={session.id} session={session} />
-            ))}
+          {/* Right: progress + chevron */}
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            {progressPct !== null && (
+              <div className="flex items-center gap-2">
+                <div className="h-1.5 w-20 overflow-hidden rounded-full bg-surface-secondary">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      isCompleted ? 'bg-blue-500' : 'bg-primary-500'
+                    }`}
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+                <span className={`text-xs font-bold ${isCompleted ? 'text-blue-600' : 'text-text-tertiary'}`}>{progressPct}%</span>
+              </div>
+            )}
+            {metrics.needsAttendance > 0 && (
+              <span className="rounded-full bg-warning-50 px-2 py-0.5 text-[10px] font-bold text-warning-700">
+                ⏳ {metrics.needsAttendance} chờ GS cập nhật
+              </span>
+            )}
+            <span className={`text-xs text-text-tertiary transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}>
+              ▾
+            </span>
           </div>
-        )}
-      </div>
-    </Modal>
-  );
-}
-
-function CompactSessionRow({ session }: { session: LearningSessionResponse }) {
-  return (
-    <div className="rounded-xl border border-border-light bg-white p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm font-bold text-text-primary">{formatSessionDateTime(session)}</p>
-          <p className="mt-1 text-sm text-text-tertiary">
-            {session.session_number ? `Buổi ${session.session_number}` : 'Buổi học'} · {session.tutor_name || `GS #${session.tutor_id}`}
-          </p>
         </div>
-        <SessionHistoryStatusBadge session={session} />
-      </div>
-      {session.attendance_note && (
-        <p className="mt-3 rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-800">
-          {session.attendance_note}
-        </p>
+      </button>
+
+      {/* ── Expandable session timeline ── */}
+      {expanded && (
+        <div className="border-t border-border-light bg-surface-secondary/40 px-5 py-4">
+          {/* Quick stats strip */}
+          <div className="mb-4 flex flex-wrap gap-3">
+            <StatPill label="Đã học" value={metrics.completed} tone="success" />
+            <StatPill label="Sắp tới" value={metrics.upcoming} tone="default" />
+            {metrics.cancelledOrAbsent > 0 && (
+              <StatPill label="Hủy/Vắng" value={metrics.cancelledOrAbsent} tone="muted" />
+            )}
+            {lastCompleted && (
+              <span className="ml-auto text-xs text-text-tertiary">
+                Buổi gần nhất: {formatShortDate(lastCompleted.session_date)}
+              </span>
+            )}
+          </div>
+
+          {/* Session timeline */}
+          {sortedSessions.length === 0 ? (
+            <p className="text-sm text-text-tertiary">Chưa có buổi học nào được tạo.</p>
+          ) : (
+            <ol className="space-y-2">
+              {sortedSessions.map((session, idx) => (
+                <SessionTimelineRow key={session.id} session={session} index={idx + 1} />
+              ))}
+            </ol>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-function formatSessionDateTime(session: LearningSessionResponse) {
-  const dateObj = getSessionDate(session.session_date);
-  return `${dateObj.toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'numeric', year: 'numeric' })} · ${session.start_time.slice(0, 5)} - ${session.end_time.slice(0, 5)}`;
+function StatPill({ label, value, tone }: { label: string; value: number; tone: 'success' | 'default' | 'muted' }) {
+  const cls = tone === 'success'
+    ? 'bg-success-50 text-success-700'
+    : tone === 'muted'
+      ? 'bg-surface-secondary text-text-tertiary'
+      : 'bg-white border border-border-light text-text-primary';
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${cls}`}>
+      <span className="text-sm font-extrabold">{value}</span>
+      {label}
+    </span>
+  );
 }
+
+function SessionTimelineRow({ session, index }: { session: LearningSessionResponse; index: number }) {
+  const needsUpdate = isAttendanceNeededSession(session);
+
+  const dotColor = session.status === 'COMPLETED'
+    ? 'bg-success-500'
+    : session.status === 'CANCELLED' || session.status === 'NO_SHOW'
+      ? 'bg-text-tertiary'
+      : needsUpdate
+        ? 'bg-warning-400'
+        : 'bg-primary-400';
+
+  return (
+    <li className="flex items-start gap-3">
+      {/* Timeline dot */}
+      <div className="mt-1.5 flex flex-col items-center">
+        <div className={`h-2.5 w-2.5 rounded-full ${dotColor}`} />
+      </div>
+
+      {/* Content */}
+      <div className="flex flex-1 flex-wrap items-start justify-between gap-x-4 gap-y-1 rounded-xl border border-border-light bg-white px-3 py-2.5">
+        <div>
+          <p className="text-sm font-semibold text-text-primary">
+            Buổi {session.session_number ?? index} &nbsp;·&nbsp; {formatShortDate(session.session_date)}
+            &nbsp;<span className="font-normal text-text-secondary">{session.start_time.slice(0, 5)}–{session.end_time.slice(0, 5)}</span>
+          </p>
+          {needsUpdate && (
+            <p className="mt-0.5 text-xs text-warning-600">⏳ Gia sư chưa cập nhật điểm danh</p>
+          )}
+          {session.attendance_note && (
+            <p className="mt-0.5 text-xs text-text-tertiary italic">"{session.attendance_note}"</p>
+          )}
+        </div>
+        <SessionHistoryStatusBadge session={session} />
+      </div>
+    </li>
+  );
+}
+
+function formatShortDate(dateStr: string) {
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString('vi-VN', {
+    weekday: 'short', day: 'numeric', month: 'numeric',
+  });
+}
+
+
 
 function SessionHistoryStatusBadge({ session }: { session: LearningSessionResponse }) {
   if (isAttendanceNeededSession(session)) {
@@ -650,13 +631,11 @@ function PrivateRequestCard({
   onAction,
   onPayNow,
   payLoading,
-  onDetails,
 }: {
   request: PrivateRequestResponse;
   onAction: (path: string) => void;
   onPayNow: () => void;
   payLoading: boolean;
-  onDetails: () => void;
 }) {
   const isPaid = request.status === 'PAID';
   const isConfirmed = request.status === 'TUTOR_CONFIRMED';
@@ -744,7 +723,6 @@ function PrivateRequestCard({
 
           
           <div className="flex gap-2">
-            <Button variant="outline" className="flex-1 justify-center border-border-light shadow-sm" onClick={onDetails}>Xem chi tiết</Button>
             {isConfirmed ? (
               <Button className="flex-1 justify-center shadow-sm" onClick={onPayNow} disabled={payLoading}>
                 {payLoading ? 'Đang tải...' : 'Thanh toán'}
@@ -771,13 +749,11 @@ function ClassRegistrationCard({
   onAction,
   onPayNow,
   payLoading,
-  onDetails,
 }: {
   reg: ClassRegistrationResponse;
   onAction: (path: string) => void;
   onPayNow: () => void;
   payLoading: boolean;
-  onDetails: () => void;
 }) {
   const isPaid = reg.status === 'PAID';
   const isApproved = reg.status === 'APPROVED';
@@ -830,7 +806,6 @@ function ClassRegistrationCard({
         </div>
 
         <div className="flex gap-2 mt-4">
-          <Button variant="outline" className="flex-1 justify-center border-border-light shadow-sm" onClick={onDetails}>Xem chi tiết</Button>
           {isApproved ? (
             <Button className="flex-1 justify-center shadow-sm" onClick={onPayNow} disabled={payLoading}>
               {payLoading ? 'Đang tải...' : 'Thanh toán'}
