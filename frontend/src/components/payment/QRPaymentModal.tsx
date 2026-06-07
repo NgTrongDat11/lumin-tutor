@@ -75,7 +75,7 @@ export default function QRPaymentModal({ open, payment, onClose, onPaid }: QRPay
   const displayAmount = payment.display_amount || Number(payment.amount);
 
   return (
-    <Modal open={open} onClose={onClose} title="" size="sm" footer={null}>
+    <Modal open={open} onClose={onClose} title="Thanh toán" size="sm" footer={null}>
       {isSucceeded ? (
         /* ── Success ── */
         <div className="flex flex-col items-center gap-5 py-8 text-center">

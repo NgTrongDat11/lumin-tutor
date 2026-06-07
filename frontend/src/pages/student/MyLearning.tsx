@@ -205,10 +205,18 @@ function PrivateRequestCard({
               {request.requested_sessions} buổi học ({request.mode === 'ONLINE' ? 'Trực tuyến' : request.mode === 'OFFLINE' ? 'Trực tiếp' : 'Cả hai'})
             </p>
             {request.agreed_fee_per_session && (
-              <p className="text-sm font-bold text-text-primary flex items-center gap-2">
-                <span className="w-4 text-center text-primary-500">💰</span>
-                {toCurrency(request.agreed_fee_per_session)} <span className="font-normal text-xs text-text-tertiary">/ buổi</span>
-              </p>
+              <div className="pt-2 mt-2 border-t border-border-light/50 flex items-center justify-between">
+                <p className="text-sm font-bold text-text-primary flex items-center gap-2">
+                  <span className="w-4 text-center text-primary-500">💰</span>
+                  {toCurrency(request.agreed_fee_per_session)} <span className="font-normal text-xs text-text-tertiary">/ buổi</span>
+                </p>
+                <div className="text-right">
+                  <p className="text-[10px] uppercase text-text-tertiary font-bold mb-0.5">Tổng cộng</p>
+                  <p className="text-sm font-extrabold text-primary-700">
+                    {toCurrency(Number(request.agreed_fee_per_session) * (request.requested_sessions || 0))}
+                  </p>
+                </div>
+              </div>
             )}
             {request.tutor_response_note && (
               <div className="mt-3 bg-white/60 p-3 rounded-lg border border-border-light border-dashed">
@@ -315,10 +323,16 @@ function ClassRegistrationCard({
             {reg.total_sessions} buổi
           </p>
           {reg.fee_per_session_per_student && (
-            <div className="pt-2 mt-2 border-t border-border-light/50">
+            <div className="pt-2 mt-2 border-t border-border-light/50 flex items-center justify-between">
                <p className="text-base font-bold text-primary-700">
                  {toCurrency(reg.fee_per_session_per_student)} <span className="text-xs text-text-tertiary font-normal">/ buổi</span>
                </p>
+               <div className="text-right">
+                 <p className="text-[10px] uppercase text-text-tertiary font-bold mb-0.5">Tổng cộng</p>
+                 <p className="text-base font-extrabold text-primary-700">
+                   {toCurrency(Number(reg.fee_per_session_per_student) * (reg.total_sessions || 0))}
+                 </p>
+               </div>
             </div>
           )}
           {reg.review_note && (
