@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { classApi, privateRequestApi } from '../../services/api';
-import type { ClassRegistrationResponse, PrivateRequestResponse } from '../../types';
+import { classApi, privateRequestApi, paymentApi } from '../../services/api';
+import type { ClassRegistrationResponse, PrivateRequestResponse, PaymentResponse } from '../../types';
 import { PortalPage, SegmentedTabs, EmptyPanel } from '../../components/portal/PortalPage';
 import { getStatusBadge } from '../../components/ui/Badge';
 import { PageLoading } from '../../components/ui/Spinner';
 import Button from '../../components/ui/Button';
 import Avatar from '../../components/ui/Avatar';
 import { UsersIcon, CalendarIcon, CheckCircleIcon } from '../../components/ui/Icons';
+import QRPaymentModal from '../../components/payment/QRPaymentModal';
+import { useToast } from '../../components/ui/Toast';
 
 function toCurrency(value: string | number | null | undefined) {
   if (value == null) return '0đ';
@@ -26,8 +28,11 @@ export default function StudentMyLearning() {
   const [requests, setRequests] = useState<PrivateRequestResponse[]>([]);
   const [myClasses, setMyClasses] = useState<ClassRegistrationResponse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [qrPayment, setQrPayment] = useState<PaymentResponse | null>(null);
+  const [payLoading, setPayLoading] = useState<string | null>(null); // "PRIVATE_123" or "CLASS_456"
+  const { toast } = useToast();
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     Promise.all([
       privateRequestApi.list().catch(() => []),
       classApi.myRegistrations().catch(() => []),
@@ -37,6 +42,44 @@ export default function StudentMyLearning() {
       setLoading(false);
     });
   }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handlePayNow = async (targetType: 'PRIVATE_TUTORING_REQUEST' | 'CLASS_REGISTRATION', targetId: number) => {
+    const loadingKey = `${targetType}_${targetId}`;
+    setPayLoading(loadingKey);
+    try {
+      const payments = await paymentApi.list();
+      const pending = payments.find(
+        (p: PaymentResponse) =>
+          p.target_type === targetType &&
+          p.target_id === targetId &&
+          (p.status === 'CREATED' || p.status === 'PENDING')
+      );
+      if (!pending) {
+        toast('warning', 'Không tìm thấy giao dịch chờ thanh toán. Vui lòng liên hệ hỗ trợ.');
+        return;
+      }
+      if (pending.provider?.toUpperCase() === 'SEPAY') {
+        setQrPayment(pending);
+      } else {
+        // Mock payment — navigate to payments page
+        navigate('/student/payments');
+      }
+    } catch {
+      toast('error', 'Không thể tải thông tin thanh toán.');
+    } finally {
+      setPayLoading(null);
+    }
+  };
+
+  const handleQrPaid = useCallback(() => {
+    toast('success', 'Thanh toán thành công! 🎉');
+    setQrPayment(null);
+    loadData();
+  }, [loadData, toast]);
 
   if (loading) return <PageLoading />;
 
@@ -66,7 +109,13 @@ export default function StudentMyLearning() {
             ) : (
               <div className="grid gap-6 lg:grid-cols-2">
                 {requests.map((req) => (
-                  <PrivateRequestCard key={req.id} request={req} onAction={(path) => navigate(path)} />
+                  <PrivateRequestCard
+                    key={req.id}
+                    request={req}
+                    onAction={(path) => navigate(path)}
+                    onPayNow={() => handlePayNow('PRIVATE_TUTORING_REQUEST', req.id)}
+                    payLoading={payLoading === `PRIVATE_TUTORING_REQUEST_${req.id}`}
+                  />
                 ))}
               </div>
             )}
@@ -84,18 +133,41 @@ export default function StudentMyLearning() {
             ) : (
               <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
                 {myClasses.map((reg) => (
-                  <ClassRegistrationCard key={reg.id} reg={reg} onAction={(path) => navigate(path)} />
+                  <ClassRegistrationCard
+                    key={reg.id}
+                    reg={reg}
+                    onAction={(path) => navigate(path)}
+                    onPayNow={() => handlePayNow('CLASS_REGISTRATION', reg.id)}
+                    payLoading={payLoading === `CLASS_REGISTRATION_${reg.id}`}
+                  />
                 ))}
               </div>
             )}
           </div>
         )}
       </div>
+
+      <QRPaymentModal
+        open={qrPayment !== null}
+        payment={qrPayment}
+        onClose={() => setQrPayment(null)}
+        onPaid={handleQrPaid}
+      />
     </PortalPage>
   );
 }
 
-function PrivateRequestCard({ request, onAction }: { request: PrivateRequestResponse; onAction: (path: string) => void }) {
+function PrivateRequestCard({
+  request,
+  onAction,
+  onPayNow,
+  payLoading,
+}: {
+  request: PrivateRequestResponse;
+  onAction: (path: string) => void;
+  onPayNow: () => void;
+  payLoading: boolean;
+}) {
   const isPaid = request.status === 'PAID';
   const isConfirmed = request.status === 'TUTOR_CONFIRMED';
   const isRejected = request.status === 'TUTOR_REJECTED';
@@ -176,9 +248,10 @@ function PrivateRequestCard({ request, onAction }: { request: PrivateRequestResp
           {isConfirmed ? (
             <Button 
               className="w-full justify-center shadow-sm" 
-              onClick={() => onAction('/student/payments')}
+              onClick={onPayNow}
+              disabled={payLoading}
             >
-              Thanh toán ngay để bắt đầu
+              {payLoading ? 'Đang tải...' : 'Thanh toán ngay để bắt đầu'}
             </Button>
           ) : isPaid ? (
             <Button 
@@ -203,7 +276,17 @@ function PrivateRequestCard({ request, onAction }: { request: PrivateRequestResp
   );
 }
 
-function ClassRegistrationCard({ reg, onAction }: { reg: ClassRegistrationResponse; onAction: (path: string) => void }) {
+function ClassRegistrationCard({
+  reg,
+  onAction,
+  onPayNow,
+  payLoading,
+}: {
+  reg: ClassRegistrationResponse;
+  onAction: (path: string) => void;
+  onPayNow: () => void;
+  payLoading: boolean;
+}) {
   const isPaid = reg.status === 'PAID';
   const isApproved = reg.status === 'APPROVED';
   const isPending = reg.status === 'PENDING';
@@ -251,9 +334,10 @@ function ClassRegistrationCard({ reg, onAction }: { reg: ClassRegistrationRespon
         {isApproved ? (
           <Button 
             className="w-full justify-center shadow-sm" 
-            onClick={() => onAction('/student/payments')}
+            onClick={onPayNow}
+            disabled={payLoading}
           >
-            Thanh toán ngay để bắt đầu
+            {payLoading ? 'Đang tải...' : 'Thanh toán ngay để bắt đầu'}
           </Button>
         ) : isPaid ? (
           <Button 
