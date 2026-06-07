@@ -1,7 +1,11 @@
 """FastAPI application entry point."""
 
+import os
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.auth import router as auth_router
 from app.api.v1.tutor import router as tutor_router
@@ -49,15 +53,17 @@ app.include_router(webhooks_router, prefix=API_V1)
 app.include_router(subjects_router, prefix=API_V1)
 app.include_router(schedules_router, prefix=API_V1)
 app.include_router(admin_router, prefix=API_V1)
-from fastapi.staticfiles import StaticFiles
-
 app.include_router(chat_router, prefix=API_V1)
 app.include_router(storage_router, prefix=API_V1)
 
 # Serve uploaded files locally
-import os
 os.makedirs("uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+seed_dir = Path(__file__).resolve().parents[2] / "seed"
+if seed_dir.exists():
+    app.mount("/seed", StaticFiles(directory=seed_dir), name="seed")
+
 # ── Health ───────────────────────────────────────────────
 @app.get("/api/v1/health", tags=["Health"])
 async def health_check():

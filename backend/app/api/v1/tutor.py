@@ -154,7 +154,11 @@ async def submit_for_review(
 
     profile.verification_status = "PENDING_REVIEW"
     await db.commit()
-    return ApiResponse(message="Đã gửi hồ sơ để duyệt.")
+    await db.refresh(profile)
+    return ApiResponse(
+        data=TutorProfileResponse.model_validate(profile),
+        message="Đã gửi hồ sơ để duyệt.",
+    )
 
 
 # ── Qualifications ───────────────────────────────────────

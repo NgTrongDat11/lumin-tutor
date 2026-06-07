@@ -8,6 +8,7 @@ import Modal from '../../components/ui/Modal';
 import Select from '../../components/ui/Select';
 import Textarea from '../../components/ui/Textarea';
 import { getStatusBadge } from '../../components/ui/Badge';
+import DocumentLink from '../../components/ui/DocumentLink';
 import { PageLoading } from '../../components/ui/Spinner';
 import { useToast } from '../../components/ui/Toast';
 import { ShieldCheckIcon, UserCheckIcon, WalletIcon } from '../../components/ui/Icons';
@@ -90,7 +91,12 @@ export default function TutorProfile({ initialTab = 'profile' }: { initialTab?: 
     setSubmitting(true);
     try {
       const updated = await tutorApi.submitReview();
-      setProfile(updated);
+      if (updated) {
+        setProfile(updated);
+      } else {
+        const freshProfile = await tutorApi.getProfile();
+        setProfile(freshProfile);
+      }
       toast('success', 'Đã gửi hồ sơ chờ duyệt');
       refresh();
     } catch {
@@ -274,9 +280,13 @@ export default function TutorProfile({ initialTab = 'profile' }: { initialTab?: 
                   </div>
 
                   {qualification.review_note && <p className="mt-4 rounded-md border border-warning-100 bg-warning-50 p-3 text-sm text-warning-700">{qualification.review_note}</p>}
-                  <a href={qualification.file_url} target="_blank" rel="noreferrer" className="mt-4 inline-flex rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-primary-800 hover:bg-primary-50">
+                  <DocumentLink
+                    fileUrl={qualification.file_url}
+                    className="mt-4 inline-flex rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-primary-800 hover:bg-primary-50"
+                    unavailableClassName="mt-4 inline-flex rounded-full bg-warning-50 px-3 py-1.5 text-xs font-semibold text-warning-700"
+                  >
                     Xem tài liệu
-                  </a>
+                  </DocumentLink>
                 </article>
               ))}
             </div>

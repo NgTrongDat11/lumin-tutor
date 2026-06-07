@@ -5,17 +5,22 @@ import type { CourseClassResponse, LearningSessionResponse, PaymentResponse, Tut
 import Button from '../../components/ui/Button';
 import { getStatusBadge } from '../../components/ui/Badge';
 import { PageLoading } from '../../components/ui/Spinner';
+import { useToast } from '../../components/ui/Toast';
 import { ArrowRightIcon, CalendarIcon, LayersIcon, UserCheckIcon, WalletIcon } from '../../components/ui/Icons';
 import { EmptyPanel, MetricTile, PortalPage, SectionPanel } from '../../components/portal/PortalPage';
+import { TutorDetailModal } from './TutorVerification';
 
 export default function StaffDashboard() {
   const [pendingTutors, setPendingTutors] = useState<TutorPublicResponse[]>([]);
   const [classes, setClasses] = useState<CourseClassResponse[]>([]);
   const [payments, setPayments] = useState<PaymentResponse[]>([]);
   const [sessions, setSessions] = useState<LearningSessionResponse[]>([]);
+  const [selectedTutor, setSelectedTutor] = useState<TutorPublicResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true);
     Promise.all([
       staffApi.getPendingTutors().catch(() => []),
       classApi.list().catch(() => []),
@@ -28,7 +33,9 @@ export default function StaffDashboard() {
       setSessions(sessionList);
       setLoading(false);
     });
-  }, []);
+  };
+
+  useEffect(load, []);
 
   if (loading) return <PageLoading />;
 
@@ -81,7 +88,12 @@ export default function StaffDashboard() {
                       <p className="text-xs text-text-tertiary">{tutor.years_experience} năm KN · {tutor.subjects.length} môn</p>
                     </div>
                   </div>
-                  {getStatusBadge(tutor.verification_status)}
+                  <div className="flex shrink-0 items-center gap-2">
+                    {getStatusBadge(tutor.verification_status)}
+                    <Button size="sm" variant="ghost" onClick={() => setSelectedTutor(tutor)}>
+                      Xem chi tiết
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -113,6 +125,15 @@ export default function StaffDashboard() {
           )}
         </SectionPanel>
       </div>
+
+      {selectedTutor && (
+        <TutorDetailModal
+          tutor={selectedTutor}
+          onClose={() => setSelectedTutor(null)}
+          onUpdated={() => { setSelectedTutor(null); load(); }}
+          toast={toast}
+        />
+      )}
     </PortalPage>
   );
 }

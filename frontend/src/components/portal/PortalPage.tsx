@@ -95,7 +95,7 @@ interface SegmentedTabsProps<T extends string> {
 
 export function SegmentedTabs<T extends string>({ value, onChange, tabs }: SegmentedTabsProps<T>) {
   return (
-    <div className="flex w-full gap-1 overflow-x-auto rounded-lg border border-border-light bg-surface-secondary p-1">
+    <div className="flex w-full sm:max-w-md gap-1 overflow-x-auto rounded-xl border border-border-light bg-surface-secondary/80 p-1.5 shadow-sm backdrop-blur-sm">
       {tabs.map((tab) => {
         const active = tab.value === value;
         return (
@@ -103,15 +103,15 @@ export function SegmentedTabs<T extends string>({ value, onChange, tabs }: Segme
             key={tab.value}
             type="button"
             onClick={() => onChange(tab.value)}
-            className={`flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
+            className={`flex flex-1 shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold transition-all duration-200 ${
               active
-                ? 'bg-white text-text-primary shadow-xs'
-                : 'text-text-secondary hover:bg-white/70 hover:text-text-primary'
+                ? 'bg-white text-primary-700 shadow border border-border-light/50 scale-100'
+                : 'text-text-secondary hover:bg-white/60 hover:text-text-primary hover:scale-[0.98]'
             }`}
           >
             {tab.label}
             {typeof tab.count === 'number' && (
-              <span className={`rounded-full px-2 py-0.5 text-xs ${active ? 'bg-primary-50 text-primary-700' : 'bg-white text-text-tertiary'}`}>
+              <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${active ? 'bg-primary-50 text-primary-700' : 'bg-surface-tertiary text-text-tertiary'}`}>
                 {tab.count}
               </span>
             )}

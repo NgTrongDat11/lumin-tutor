@@ -4,6 +4,7 @@ import type { TutorPublicResponse, TutorDetailResponse } from '../../types';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import Input from '../../components/ui/Input';
+import DocumentLink from '../../components/ui/DocumentLink';
 import { getStatusBadge } from '../../components/ui/Badge';
 import Spinner, { PageLoading } from '../../components/ui/Spinner';
 import EmptyState from '../../components/ui/EmptyState';
@@ -58,7 +59,7 @@ export default function StaffTutorVerification() {
         <MetricTile icon={CalendarIcon} label="Từ chối" value={rejectedCount} hint="Không đạt yêu cầu." tone={rejectedCount > 0 ? 'warning' : 'neutral'} />
       </div>
 
-      <SectionPanel title="Danh sách gia sư" description="Bấm vào gia sư để xem chi tiết và duyệt.">
+      <SectionPanel title="Danh sách gia sư" description="Dùng nút xem chi tiết để mở modal duyệt hồ sơ.">
         {/* Tabs + Search */}
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
           <div className="flex bg-surface-secondary p-1 rounded-xl w-fit">
@@ -94,10 +95,8 @@ export default function StaffTutorVerification() {
               const isUpdate = tutor.subjects.some(s => s.status === 'APPROVED');
               const isPending = tutor.verification_status === 'PENDING_REVIEW';
               return (
-                <button
-                  type="button"
+                <div
                   key={tutor.id}
-                  onClick={() => setSelectedTutor(tutor)}
                   className="w-full flex items-center justify-between gap-3 py-3 px-1 text-left transition-colors hover:bg-surface-secondary rounded-lg -mx-1"
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -120,8 +119,13 @@ export default function StaffTutorVerification() {
                       </p>
                     </div>
                   </div>
-                  {getStatusBadge(tutor.verification_status)}
-                </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {getStatusBadge(tutor.verification_status)}
+                    <Button size="sm" variant="ghost" onClick={() => setSelectedTutor(tutor)}>
+                      Xem chi tiết
+                    </Button>
+                  </div>
+                </div>
               );
             })}
           </div>
@@ -140,7 +144,7 @@ export default function StaffTutorVerification() {
   );
 }
 
-function TutorDetailModal({ tutor, onClose, onUpdated, toast }: { tutor: TutorPublicResponse; onClose: () => void; onUpdated: () => void; toast: (t: 'success' | 'error', m: string) => void }) {
+export function TutorDetailModal({ tutor, onClose, onUpdated, toast }: { tutor: TutorPublicResponse; onClose: () => void; onUpdated: () => void; toast: (t: 'success' | 'error', m: string) => void }) {
   const [detail, setDetail] = useState<TutorDetailResponse | null>(null);
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
@@ -293,11 +297,7 @@ function TutorDetailModal({ tutor, onClose, onUpdated, toast }: { tutor: TutorPu
                       {getStatusBadge(q.status)}
                     </div>
                     <p className="text-xs text-text-secondary mt-0.5">{q.type} {q.issuer && `· ${q.issuer}`}</p>
-                    {q.file_url ? (
-                      <a href={q.file_url} target="_blank" rel="noreferrer" className="text-xs text-primary-600 hover:underline">📎 Xem tài liệu</a>
-                    ) : (
-                      <span className="text-xs text-warning-600">⚠️ Không có tài liệu</span>
-                    )}
+                    <DocumentLink fileUrl={q.file_url}>Xem tài liệu</DocumentLink>
                   </div>
                   {q.status === 'PENDING' && isPending && (
                     <div className="flex gap-1.5 shrink-0">

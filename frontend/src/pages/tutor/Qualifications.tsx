@@ -7,6 +7,7 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Select from '../../components/ui/Select';
 import Modal from '../../components/ui/Modal';
+import DocumentLink from '../../components/ui/DocumentLink';
 import EmptyState from '../../components/ui/EmptyState';
 import { PageLoading } from '../../components/ui/Spinner';
 import { useToast } from '../../components/ui/Toast';
@@ -101,7 +102,13 @@ export default function TutorQualifications() {
                   </div>
 
                   {q.review_note && <p className="text-xs bg-warning-50 p-2 rounded text-warning-700 mt-4 border border-warning-100">📝 Lời nhắn từ hệ thống: {q.review_note}</p>}
-                  <a href={q.file_url} target="_blank" rel="noreferrer" className="text-xs text-primary-600 bg-primary-50 px-3 py-1.5 rounded-full hover:bg-primary-100 transition-colors mt-4 inline-block">📎 Xem tài liệu đính kèm</a>
+                  <DocumentLink
+                    fileUrl={q.file_url}
+                    className="text-xs text-primary-600 bg-primary-50 px-3 py-1.5 rounded-full hover:bg-primary-100 transition-colors mt-4 inline-block"
+                    unavailableClassName="text-xs text-warning-600 bg-warning-50 px-3 py-1.5 rounded-full mt-4 inline-block"
+                  >
+                    Xem tài liệu đính kèm
+                  </DocumentLink>
                 </div>
                 <Button variant="ghost" size="sm" onClick={() => handleDelete(q.id)} className="text-danger-600 hover:bg-danger-50 self-start">Xoá</Button>
               </div>

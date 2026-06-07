@@ -5,6 +5,14 @@
       "destination": "http://188.166.225.22:8000/api/$1"
     },
     {
+      "source": "/seed/(.*)",
+      "destination": "http://188.166.225.22:8000/seed/$1"
+    },
+    {
+      "source": "/uploads/(.*)",
+      "destination": "http://188.166.225.22:8000/uploads/$1"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
