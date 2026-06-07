@@ -131,8 +131,18 @@ def get_bank_info(amount: int, transfer_content: str | None) -> dict:
 def get_payment_response_extras(payment: Payment) -> dict:
     transfer_content = payment.transfer_content or generate_transfer_content(payment.id)
     qr_amount = calculate_qr_amount(payment.amount)
+    qr_data_url = payment.qr_data_url
+    if not qr_data_url and settings.SEPAY_BANK_ACCOUNT and settings.SEPAY_BANK_NAME:
+        qr_data_url = build_qr_url(
+            bank_account=settings.SEPAY_BANK_ACCOUNT,
+            bank_name=settings.SEPAY_BANK_NAME,
+            amount=qr_amount,
+            transfer_content=transfer_content,
+            account_name=settings.SEPAY_ACCOUNT_NAME,
+        )
     return {
         "qr_amount": qr_amount,
+        "qr_data_url": qr_data_url,
         "display_amount": int(payment.amount),
         "bank_info": get_bank_info(qr_amount, transfer_content),
         "is_test_mode": settings.SEPAY_TEST_AMOUNT > 0 or settings.PAYMENT_AMOUNT_DIVISOR > 1,

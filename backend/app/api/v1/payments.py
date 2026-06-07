@@ -38,6 +38,7 @@ def _payment_response(payment: Payment) -> PaymentResponse:
     if resp.provider.upper() == "SEPAY":
         extras = get_payment_response_extras(payment)
         resp.qr_amount = extras["qr_amount"]
+        resp.qr_data_url = extras.get("qr_data_url") or resp.qr_data_url
         resp.display_amount = extras["display_amount"]
         resp.bank_info = extras["bank_info"]
         resp.is_test_mode = extras["is_test_mode"]
