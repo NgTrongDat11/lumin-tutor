@@ -3,10 +3,9 @@ import { scheduleApi } from '../../services/api';
 import type { LearningSessionResponse } from '../../types';
 import { PortalPage } from '../../components/portal/PortalPage';
 import { PageLoading } from '../../components/ui/Spinner';
-import { ClockIcon, ArrowRightIcon, BookOpenIcon, CalendarIcon, UsersIcon } from '../../components/ui/Icons';
+import { ClockIcon, ArrowRightIcon } from '../../components/ui/Icons';
 import Button from '../../components/ui/Button';
-import Modal from '../../components/ui/Modal';
-import { getStatusBadge } from '../../components/ui/Badge';
+import { SessionDetailModal } from '../../components/learning/SessionDetailModal';
 
 // Utility functions for dates
 function getStartOfWeek(date: Date) {
@@ -197,101 +196,5 @@ function SessionBlock({ session, onClick }: { session: LearningSessionResponse; 
         <span>{session.start_time.slice(0, 5)} - {session.end_time.slice(0, 5)}</span>
       </div>
     </div>
-  );
-}
-
-function SessionDetailModal({ session, onClose }: { session: LearningSessionResponse | null; onClose: () => void }) {
-  if (!session) return null;
-
-  const isPast = new Date(session.session_date) < new Date(new Date().setHours(0, 0, 0, 0));
-  const sessionType = session.class_id ? 'Lớp nhóm' : 'Học 1-1';
-  const sessionLabel = session.class_title || session.private_request_title || (session.private_request_id ? `Yêu cầu 1-1 #${session.private_request_id}` : `Buổi học`);
-
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title="Chi tiết buổi học"
-      size="md"
-      footer={<Button variant="ghost" onClick={onClose}>Đóng</Button>}
-    >
-      <div className="space-y-5">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-primary-600 mb-1">{sessionType}</p>
-            <h3 className="text-xl font-bold text-text-primary">{sessionLabel}</h3>
-          </div>
-          {getStatusBadge(session.status)}
-        </div>
-
-        {/* Info grid */}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border border-border-light bg-surface-secondary p-4 flex flex-col items-center text-center">
-            <CalendarIcon className="w-5 h-5 text-text-tertiary mb-2" />
-            <span className="text-xs text-text-tertiary font-medium mb-1">Ngày học</span>
-            <span className="text-sm font-bold text-text-primary">
-              {new Date(session.session_date).toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'numeric', year: 'numeric' })}
-            </span>
-          </div>
-          <div className="rounded-xl border border-border-light bg-surface-secondary p-4 flex flex-col items-center text-center">
-            <ClockIcon className="w-5 h-5 text-text-tertiary mb-2" />
-            <span className="text-xs text-text-tertiary font-medium mb-1">Thời gian</span>
-            <span className="text-sm font-bold text-text-primary">
-              {session.start_time.slice(0, 5)} – {session.end_time.slice(0, 5)}
-            </span>
-          </div>
-        </div>
-
-        {/* Detail rows */}
-        <div className="divide-y divide-border-light rounded-xl border border-border-light overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 bg-white">
-            <span className="text-sm text-text-secondary flex items-center gap-2">
-              <BookOpenIcon className="w-4 h-4 text-text-tertiary" /> Buổi số
-            </span>
-            <span className="text-sm font-bold text-text-primary">{session.session_number ?? '—'}</span>
-          </div>
-          <div className="flex items-center justify-between px-4 py-3 bg-white">
-            <span className="text-sm text-text-secondary flex items-center gap-2">
-              <UsersIcon className="w-4 h-4 text-text-tertiary" /> Gia sư
-            </span>
-            <span className="text-sm font-bold text-text-primary">{session.tutor_name || `GS #${session.tutor_id}`}</span>
-          </div>
-          {session.class_title && (
-            <div className="flex items-center justify-between px-4 py-3 bg-white">
-              <span className="text-sm text-text-secondary flex items-center gap-2">
-                <BookOpenIcon className="w-4 h-4 text-text-tertiary" /> Lớp
-              </span>
-              <span className="text-sm font-bold text-text-primary">{session.class_title}</span>
-            </div>
-          )}
-          {session.private_request_id && (
-            <div className="flex items-center justify-between px-4 py-3 bg-white">
-              <span className="text-sm text-text-secondary flex items-center gap-2">
-                <BookOpenIcon className="w-4 h-4 text-text-tertiary" /> Yêu cầu 1-1
-              </span>
-              <span className="text-sm font-bold text-text-primary">{session.private_request_title || `#${session.private_request_id}`}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Attendance note */}
-        {session.attendance_note && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-            <p className="text-xs font-bold text-amber-700 uppercase mb-1">Ghi chú điểm danh</p>
-            <p className="text-sm text-amber-900">{session.attendance_note}</p>
-          </div>
-        )}
-
-        {/* Status hint */}
-        {isPast && session.status === 'SCHEDULED' && (
-          <div className="bg-warning-50 border border-warning-200 rounded-xl p-3">
-            <p className="text-xs text-warning-800">
-              ⚠️ Buổi học này đã qua nhưng chưa được cập nhật điểm danh.
-            </p>
-          </div>
-        )}
-      </div>
-    </Modal>
   );
 }

@@ -76,10 +76,36 @@ function matchesMode(value: string | null | undefined, filter: ModeFilter) {
   return value === filter || value === 'BOTH';
 }
 
-function getClassModeLabel(course: CourseClassResponse) {
-  if (course.mode === 'ONLINE') return 'Trực tuyến';
-  if (course.mode === 'OFFLINE') return course.location || 'Trực tiếp';
-  return course.location ? `Linh hoạt · ${course.location}` : 'Linh hoạt';
+function getClassModeMeta(course: CourseClassResponse) {
+  if (course.mode === 'ONLINE') {
+    return {
+      label: 'Online',
+      detail: 'Học trực tuyến',
+      classes: 'border-sky-200 bg-sky-50 text-sky-700',
+    };
+  }
+  if (course.mode === 'OFFLINE') {
+    return {
+      label: 'Trực tiếp',
+      detail: course.location || 'Học tại lớp',
+      classes: 'border-amber-200 bg-amber-50 text-amber-700',
+    };
+  }
+  return {
+    label: 'Linh hoạt',
+    detail: course.location ? `Online hoặc ${course.location}` : 'Online hoặc trực tiếp',
+    classes: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  };
+}
+
+function getTeachingModeLabel(mode: string | null | undefined) {
+  if (mode === 'ONLINE') return 'Online';
+  if (mode === 'OFFLINE') return 'Trực tiếp';
+  return 'Linh hoạt';
+}
+
+function getCourseTotalFee(course: CourseClassResponse) {
+  return Number(course.fee_per_session_per_student || 0) * course.total_sessions;
 }
 
 export default function StudentDashboard() {
@@ -148,6 +174,33 @@ export default function StudentDashboard() {
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const recommendedTutors = useMemo(() => recommendation?.recommended_tutors ?? [], [recommendation]);
   const visibleSubjectFilters = useMemo(() => subjects.slice(0, 6), [subjects]);
+  const subjectNameById = useMemo(
+    () => new Map(subjects.map((subject) => [subject.id, subject.name])),
+    [subjects],
+  );
+  const tutorRecById = useMemo(() => {
+    const data = new Map<number, RecommendedTutor>();
+    browseTutors.forEach((tutor) => {
+      data.set(tutor.id, { tutor, score: '0', reasons: [] });
+    });
+    recommendedTutors.forEach((rec) => {
+      data.set(rec.tutor.id, rec);
+    });
+    return data;
+  }, [browseTutors, recommendedTutors]);
+
+  const openTutorProfile = (tutorId: number | null | undefined) => {
+    if (!tutorId) {
+      toast('error', 'Lớp này chưa phân công giảng viên.');
+      return;
+    }
+    const rec = tutorRecById.get(tutorId);
+    if (!rec) {
+      toast('error', 'Chưa có hồ sơ công khai của giảng viên này.');
+      return;
+    }
+    setDetailTarget({ type: 'TUTOR', data: rec });
+  };
 
   const classResults = useMemo(() => {
     return classes
@@ -259,36 +312,47 @@ export default function StudentDashboard() {
             </button>
           )}
         </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <span className="text-xs font-bold uppercase tracking-wide text-text-tertiary">Lọc</span>
-          {(['ALL', 'ONLINE', 'OFFLINE'] as ModeFilter[]).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setModeFilter(mode)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
-                modeFilter === mode
-                  ? 'border-primary-600 bg-primary-600 text-white'
-                  : 'border-border bg-white text-text-secondary hover:border-primary-300 hover:text-text-primary'
-              }`}
-            >
-              {mode === 'ALL' ? 'Tất cả' : mode === 'ONLINE' ? 'Online' : 'Trực tiếp'}
-            </button>
-          ))}
-          {visibleSubjectFilters.map((subject) => (
-            <button
-              key={subject.id}
-              type="button"
-              onClick={() => setSubjectFilter((current) => current === subject.id ? null : subject.id)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
-                subjectFilter === subject.id
-                  ? 'border-primary-400 bg-primary-50 text-primary-700'
-                  : 'border-border bg-white text-text-secondary hover:border-primary-300 hover:text-text-primary'
-              }`}
-            >
-              {subject.name}
-            </button>
-          ))}
+        <div className="mt-4 grid gap-3 lg:grid-cols-[auto_1fr_auto] lg:items-start">
+          <div className="space-y-2">
+            <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary">Hình thức</p>
+            <div className="inline-flex rounded-xl border border-border bg-surface-secondary p-1">
+              {(['ALL', 'ONLINE', 'OFFLINE'] as ModeFilter[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setModeFilter(mode)}
+                  className={`rounded-lg px-3 py-2 text-xs font-bold transition-all ${
+                    modeFilter === mode
+                      ? 'bg-white text-text-primary shadow-sm'
+                      : 'text-text-secondary hover:text-text-primary'
+                  }`}
+                >
+                  {mode === 'ALL' ? 'Mọi hình thức' : mode === 'ONLINE' ? 'Online' : 'Trực tiếp'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary">Môn học</p>
+            <div className="flex flex-wrap gap-2">
+              {visibleSubjectFilters.map((subject) => (
+                <button
+                  key={subject.id}
+                  type="button"
+                  onClick={() => setSubjectFilter((current) => current === subject.id ? null : subject.id)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
+                    subjectFilter === subject.id
+                      ? 'border-primary-400 bg-primary-50 text-primary-700'
+                      : 'border-border bg-white text-text-secondary hover:border-primary-300 hover:text-text-primary'
+                  }`}
+                >
+                  {subject.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {(modeFilter !== 'ALL' || subjectFilter !== null) && (
             <button
               type="button"
@@ -296,7 +360,7 @@ export default function StudentDashboard() {
                 setModeFilter('ALL');
                 setSubjectFilter(null);
               }}
-              className="px-2 text-xs font-bold text-danger-500 hover:text-danger-700"
+              className="self-end rounded-lg px-3 py-2 text-xs font-bold text-danger-500 hover:bg-danger-50 hover:text-danger-700"
             >
               Xóa lọc
             </button>
@@ -368,7 +432,14 @@ export default function StudentDashboard() {
               </div>
               <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3 stagger-grid">
                 {pagedClasses.map((course) => (
-                  <ClassCard key={course.id} course={course} onOpen={() => setDetailTarget({ type: 'CLASS', data: course })} />
+                  <ClassCard
+                    key={course.id}
+                    course={course}
+                    subjectName={subjectNameById.get(course.subject_id)}
+                    tutorProfile={course.primary_tutor_id ? tutorRecById.get(course.primary_tutor_id)?.tutor : undefined}
+                    onOpen={() => setDetailTarget({ type: 'CLASS', data: course })}
+                    onOpenTutor={() => openTutorProfile(course.primary_tutor_id)}
+                  />
                 ))}
               </div>
               {hasMoreClasses && (
@@ -447,7 +518,10 @@ export default function StudentDashboard() {
       <DetailModal
         target={detailTarget}
         isRecommendation={activeTab === 'RECOMMENDATION'}
+        subjectNameById={subjectNameById}
+        tutorRecById={tutorRecById}
         onClose={() => setDetailTarget(null)}
+        onOpenTutor={openTutorProfile}
         onRequestTutor={(tutor) => {
           setTutorForRequest(tutor);
           setDetailTarget(null);
@@ -467,8 +541,21 @@ export default function StudentDashboard() {
   );
 }
 
-function ClassCard({ course, onOpen }: { course: CourseClassResponse; onOpen: () => void }) {
-  const modeLabel = getClassModeLabel(course);
+function ClassCard({
+  course,
+  subjectName,
+  tutorProfile,
+  onOpen,
+  onOpenTutor,
+}: {
+  course: CourseClassResponse;
+  subjectName?: string;
+  tutorProfile?: TutorPublicResponse;
+  onOpen: () => void;
+  onOpenTutor: () => void;
+}) {
+  const modeMeta = getClassModeMeta(course);
+  const totalFee = getCourseTotalFee(course);
 
   return (
     <article className="group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-xl border border-border bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-primary-200 hover:shadow-lg" onClick={onOpen}>
@@ -477,13 +564,18 @@ function ClassCard({ course, onOpen }: { course: CourseClassResponse; onOpen: ()
         <div className="mb-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-primary-600">
-              Lớp nhóm · {course.grade_level}
+              {subjectName || 'Lớp nhóm'} · {course.grade_level}
             </p>
             <h4 className="line-clamp-2 text-lg font-bold leading-snug text-text-primary transition-colors group-hover:text-primary-800">
               {course.title}
             </h4>
           </div>
-          <div className="shrink-0">{getStatusBadge(course.status)}</div>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <span className={`rounded-full border px-3 py-1 text-xs font-extrabold uppercase tracking-wide ${modeMeta.classes}`}>
+              {modeMeta.label}
+            </span>
+            {getStatusBadge(course.status)}
+          </div>
         </div>
 
         {course.goal && (
@@ -494,24 +586,44 @@ function ClassCard({ course, onOpen }: { course: CourseClassResponse; onOpen: ()
 
         <div className="mt-auto space-y-2 rounded-xl border border-border-light bg-surface-secondary/70 p-4">
           {course.tutor_name && (
-            <p className="flex items-center gap-2 text-sm font-medium text-text-secondary">
-              <UsersIcon className="h-4 w-4 shrink-0 text-primary-500" />
-              <span>GV:</span>
-              <span className="truncate font-bold text-text-primary">{course.tutor_name}</span>
-            </p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="flex min-w-0 items-center gap-2 text-sm font-medium text-text-secondary">
+                <UsersIcon className="h-4 w-4 shrink-0 text-primary-500" />
+                <span>GV:</span>
+                <span className="truncate font-bold text-text-primary">{course.tutor_name}</span>
+              </p>
+              {tutorProfile && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenTutor();
+                  }}
+                  className="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-primary-700 hover:bg-primary-50"
+                >
+                  Xem hồ sơ
+                </button>
+              )}
+            </div>
           )}
           <p className="flex items-center gap-2 text-sm font-medium text-text-secondary">
             <CalendarIcon className="h-4 w-4 shrink-0 text-primary-500" />
-            <span>{course.total_sessions} buổi · {modeLabel}</span>
+            <span>{course.total_sessions} buổi · {modeMeta.detail}</span>
           </p>
-          <div className="mt-2 flex items-center justify-between gap-3 border-t border-border-light/70 pt-2">
-            <p className="text-base font-extrabold text-primary-700">
-              {toCurrency(course.fee_per_session_per_student)}
-              <span className="text-xs font-normal text-text-tertiary"> / buổi</span>
-            </p>
-            <p className="shrink-0 text-xs text-text-tertiary">
-              {course.min_students}-{course.max_students} học viên
-            </p>
+          <div className="mt-2 border-t border-border-light/70 pt-3">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-text-tertiary">Tạm tính trọn khóa</p>
+                <p className="text-2xl font-extrabold leading-tight text-primary-800">
+                  {toCurrency(totalFee)}
+                </p>
+              </div>
+              <p className="shrink-0 text-right text-xs leading-5 text-text-tertiary">
+                {toCurrency(course.fee_per_session_per_student)} / buổi
+                <br />
+                {course.min_students}-{course.max_students} học viên
+              </p>
+            </div>
           </div>
         </div>
 
@@ -529,6 +641,7 @@ function TutorCard({ rec, isRecommendation, onOpen }: { rec: RecommendedTutor; i
     if (!Number.isFinite(fee)) return lowest;
     return lowest === null ? fee : Math.min(lowest, fee);
   }, null);
+  const modeLabel = getTeachingModeLabel(rec.tutor.teaching_mode);
 
   return (
     <article className="flex h-full flex-col rounded-xl border border-border bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:border-primary-200 cursor-pointer" onClick={onOpen}>
@@ -538,6 +651,7 @@ function TutorCard({ rec, isRecommendation, onOpen }: { rec: RecommendedTutor; i
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-600 mb-1">Gia sư 1-1</p>
             <h4 className="text-lg font-bold text-text-primary line-clamp-1">{rec.tutor.full_name}</h4>
+            <p className="mt-1 text-xs font-bold text-text-tertiary">{modeLabel} · {rec.tutor.teaching_area || 'Chưa cập nhật khu vực'}</p>
           </div>
         </div>
         {isRecommendation && (
@@ -587,6 +701,17 @@ function TutorCard({ rec, isRecommendation, onOpen }: { rec: RecommendedTutor; i
             </p>
           </div>
         )}
+
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen();
+          }}
+          className="w-full rounded-xl border border-primary-100 bg-white px-3 py-2 text-sm font-bold text-primary-700 transition-colors hover:bg-primary-50"
+        >
+          Xem hồ sơ gia sư
+        </button>
       </div>
     </article>
   );
@@ -595,13 +720,19 @@ function TutorCard({ rec, isRecommendation, onOpen }: { rec: RecommendedTutor; i
 function DetailModal({
   target,
   isRecommendation,
+  subjectNameById,
+  tutorRecById,
   onClose,
+  onOpenTutor,
   onRequestTutor,
   onRegisterClass,
 }: {
   target: DetailTarget;
   isRecommendation?: boolean;
+  subjectNameById: Map<number, string>;
+  tutorRecById: Map<number, RecommendedTutor>;
   onClose: () => void;
+  onOpenTutor: (tutorId: number | null | undefined) => void;
   onRequestTutor: (tutor: RecommendedTutor) => void;
   onRegisterClass: (classId: number) => void;
 }) {
@@ -609,6 +740,11 @@ function DetailModal({
 
   if (target.type === 'CLASS') {
     const course = target.data;
+    const modeMeta = getClassModeMeta(course);
+    const subjectName = subjectNameById.get(course.subject_id);
+    const tutorRec = course.primary_tutor_id ? tutorRecById.get(course.primary_tutor_id) : undefined;
+    const totalFee = getCourseTotalFee(course);
+
     return (
       <Modal
         open
@@ -631,18 +767,30 @@ function DetailModal({
             <h2 className="text-2xl font-bold text-text-primary">{course.title}</h2>
             <div className="flex flex-wrap items-center gap-2 mt-3">
               {getStatusBadge(course.status)}
+              {subjectName && (
+                <span className="rounded-full bg-primary-50 px-3 py-1.5 text-xs font-bold text-primary-700">{subjectName}</span>
+              )}
               <span className="rounded-full bg-surface-secondary px-3 py-1.5 text-xs font-bold text-text-secondary">{course.grade_level}</span>
-              <span className="rounded-full bg-surface-secondary px-3 py-1.5 text-xs font-bold text-text-secondary">{course.mode === 'ONLINE' ? 'Trực tuyến' : course.location || 'Trực tiếp'}</span>
+              <span className={`rounded-full border px-3 py-1.5 text-xs font-extrabold uppercase tracking-wide ${modeMeta.classes}`}>{modeMeta.label}</span>
             </div>
           </div>
 
           {course.tutor_name && (
-            <div className="flex items-center gap-3 bg-primary-50 rounded-xl p-4 border border-primary-100">
+            <div className="flex flex-col gap-3 rounded-xl border border-primary-100 bg-primary-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
               <Avatar name={course.tutor_name} size="md" shape="square" />
               <div>
                 <p className="text-xs font-bold text-primary-600 uppercase">Giảng viên phụ trách</p>
                 <p className="text-base font-bold text-text-primary">{course.tutor_name}</p>
               </div>
+              </div>
+              {tutorRec ? (
+                <Button variant="outline" size="sm" onClick={() => onOpenTutor(course.primary_tutor_id)}>
+                  Xem hồ sơ giảng viên
+                </Button>
+              ) : (
+                <span className="text-xs font-semibold text-text-tertiary">Chưa có hồ sơ công khai</span>
+              )}
             </div>
           )}
 
@@ -653,8 +801,18 @@ function DetailModal({
 
           <div className="grid gap-3 sm:grid-cols-3">
             <InfoTile icon={CalendarIcon} label="Thời lượng" value={`${course.total_sessions} buổi`} />
-            <InfoTile icon={UsersIcon} label="Sĩ số" value={`${course.min_students}-${course.max_students} hv`} />
-            <InfoTile icon={BookOpenIcon} label="Học phí" value={`${toCurrency(course.fee_per_session_per_student)}/buổi`} />
+            <InfoTile icon={UsersIcon} label="Hình thức" value={modeMeta.detail} />
+            <InfoTile icon={BookOpenIcon} label="Tạm tính" value={toCurrency(totalFee)} />
+          </div>
+
+          <div className="rounded-xl border border-border-light bg-white p-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary">Chi phí dự kiến</p>
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <p className="text-3xl font-extrabold text-primary-800">{toCurrency(totalFee)}</p>
+              <p className="text-sm font-medium text-text-secondary">
+                {toCurrency(course.fee_per_session_per_student)} / buổi x {course.total_sessions} buổi · sĩ số {course.min_students}-{course.max_students} học viên
+              </p>
+            </div>
           </div>
         </div>
       </Modal>
