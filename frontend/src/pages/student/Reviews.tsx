@@ -224,20 +224,20 @@ function ReviewableCard({ item, onReview }: { item: ReviewableItem; onReview: ()
   const modeLabel = item.mode === 'ONLINE' ? 'Trực tuyến' : item.mode === 'OFFLINE' ? 'Trực tiếp' : 'Cả hai';
 
   return (
-    <article className="group relative flex flex-col overflow-hidden rounded-2xl border border-border-light bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:border-primary-200">
+    <article className="group relative flex flex-col overflow-hidden rounded-xl border border-border-light bg-white shadow-sm transition-all duration-300 hover:border-primary-200 hover:shadow-lg md:rounded-2xl md:hover:-translate-y-1">
       {/* Decorative gradient */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary-50/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
       <div className="absolute top-0 right-0 w-28 h-28 bg-warning-50 rounded-bl-full opacity-40 pointer-events-none" />
 
       <div className="p-6 relative z-10 flex flex-col h-full">
         {/* Header: tutor info */}
-        <div className="flex items-start gap-4 mb-5">
+        <div className="mb-5 flex items-start gap-3 sm:gap-4">
           <Avatar name={item.tutorName} size="lg" className="border-2 border-white shadow-sm" />
           <div className="min-w-0 flex-1">
             <p className="text-xs font-bold uppercase tracking-widest text-primary-600 mb-0.5">
               {item.type === 'PRIVATE_TUTORING_REQUEST' ? 'Gia sư 1-1' : 'Lớp nhóm'}
             </p>
-            <h3 className="font-bold text-lg text-text-primary leading-tight truncate">
+            <h3 className="line-clamp-2 text-base font-bold leading-tight text-text-primary sm:text-lg">
               {item.tutorName}
             </h3>
           </div>
@@ -278,7 +278,7 @@ function ReviewCard({ review }: { review: ReviewResponse }) {
   const stars = Array.from({ length: 5 }, (_, i) => i < review.rating);
 
   return (
-    <article className="flex flex-col rounded-2xl border border-border-light bg-white shadow-sm overflow-hidden">
+    <article className="flex flex-col overflow-hidden rounded-xl border border-border-light bg-white shadow-sm md:rounded-2xl">
       {/* Star header strip */}
       <div className="bg-gradient-to-r from-amber-50 to-warning-50 px-6 py-4 border-b border-amber-100/60">
         <div className="flex items-center justify-between">
@@ -303,7 +303,7 @@ function ReviewCard({ review }: { review: ReviewResponse }) {
         <div className="flex items-center gap-3 mb-4">
           <Avatar name={review.tutor_name || 'Gia sư'} size="md" className="border-2 border-white shadow-sm" />
           <div className="min-w-0">
-            <p className="font-bold text-text-primary truncate">
+            <p className="line-clamp-2 font-bold text-text-primary">
               {review.tutor_name || `Gia sư #${review.tutor_id}`}
             </p>
             <p className="text-xs text-text-tertiary">

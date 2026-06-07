@@ -288,13 +288,13 @@ export interface LearningNeedResponse {
 /* ── Recommendations ──────────────────────────────── */
 export interface RecommendedTutor {
   tutor: TutorPublicResponse;
-  score: string;
+  score: string | number;
   reasons: string[];
 }
 
 export interface RecommendedClass {
   course_class: CourseClassResponse;
-  score: string;
+  score: string | number;
   reasons: string[];
 }
 
@@ -445,6 +445,7 @@ export interface PaymentResponse {
   status: PaymentStatus;
   provider: string;
   paid_at: string | null;
+  created_at: string;
   refund_amount: string | null;
   refund_reason: string | null;
   transfer_content?: string | null;
@@ -586,4 +587,23 @@ export interface TutorReviewAction {
 
 export interface ClassStatusUpdate {
   status: ClassStatus;
+}
+
+export type NotificationType =
+  | 'SESSION_REMINDER'
+  | 'SESSION_CANCELLED'
+  | 'SESSION_RESCHEDULED'
+  | 'NEW_MESSAGE';
+
+export interface NotificationResponse {
+  id: number;
+  user_id: number;
+  notification_type: NotificationType;
+  title: string;
+  body: string | null;
+  reference_type: string | null;
+  reference_id: number | null;
+  is_read: boolean;
+  read_at: string | null;
+  created_at: string;
 }

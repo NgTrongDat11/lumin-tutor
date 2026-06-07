@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   classApi,
   learningNeedApi,
@@ -11,6 +11,7 @@ import {
 } from '../../services/api';
 import type {
   CourseClassResponse,
+  RecommendedClass,
   RecommendedTutor,
   RecommendationResponse,
   SubjectResponse,
@@ -32,6 +33,7 @@ import { useToast } from '../../components/ui/Toast';
 import {
   BookOpenIcon,
   CalendarIcon,
+  CheckCircleIcon,
   SearchIcon,
   UsersIcon,
 } from '../../components/ui/Icons';
@@ -50,6 +52,7 @@ type ResultTab = 'ALL' | 'CLASS' | 'TUTOR' | 'RECOMMENDATION';
 type ModeFilter = 'ALL' | 'ONLINE' | 'OFFLINE';
 type DetailTarget =
   | { type: 'CLASS'; data: CourseClassResponse }
+  | { type: 'RECOMMENDED_CLASS'; data: RecommendedClass }
   | { type: 'TUTOR'; data: RecommendedTutor }
   | null;
 
@@ -108,17 +111,45 @@ function getCourseTotalFee(course: CourseClassResponse) {
   return Number(course.fee_per_session_per_student || 0) * course.total_sessions;
 }
 
+function formatMatchScore(score: string | number | null | undefined) {
+  const value = Number(score || 0);
+  if (!Number.isFinite(value)) return '0';
+  return value.toFixed(0);
+}
+
+function getModeLabel(mode: string | null | undefined) {
+  if (mode === 'ONLINE') return 'Online';
+  if (mode === 'OFFLINE') return 'Trực tiếp';
+  return 'Linh hoạt';
+}
+
+function getLearningTypeLabel(type: string | null | undefined) {
+  if (type === 'PRIVATE') return 'Gia sư 1-1';
+  if (type === 'GROUP') return 'Lớp nhóm';
+  return 'Cả lớp nhóm và 1-1';
+}
+
+function getTimeSlotLabel(slot: string | null | undefined) {
+  if (slot === 'MORNING') return 'Sáng';
+  if (slot === 'AFTERNOON') return 'Chiều';
+  if (slot === 'EVENING') return 'Tối';
+  return 'Cả ngày';
+}
+
 export default function StudentDashboard() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   
   const [subjects, setSubjects] = useState<SubjectResponse[]>([]);
   const [classes, setClasses] = useState<CourseClassResponse[]>([]);
   const [browseTutors, setBrowseTutors] = useState<TutorPublicResponse[]>([]);
+  const [learningNeeds, setLearningNeeds] = useState<LearningNeedResponse[]>([]);
   const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null);
   const [activeNeed, setActiveNeed] = useState<LearningNeedResponse | null>(null);
   
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchDraft, setSearchDraft] = useState('');
+  const [submittedSearch, setSubmittedSearch] = useState('');
   const [modeFilter, setModeFilter] = useState<ModeFilter>('ALL');
   const [subjectFilter, setSubjectFilter] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<ResultTab>('ALL');
@@ -130,10 +161,13 @@ export default function StudentDashboard() {
   const [showSmartMatch, setShowSmartMatch] = useState(false);
   const [tutorForRequest, setTutorForRequest] = useState<RecommendedTutor | null>(null);
 
-  const fetchRecommendation = async (needId: number) => {
+  const fetchRecommendation = async (need: LearningNeedResponse) => {
+    setActiveNeed(need);
+    setRecommendation(null);
+    setActiveTab('RECOMMENDATION');
     setRecLoading(true);
     try {
-      const rec = await recommendationApi.forNeed(needId);
+      const rec = await recommendationApi.forNeed(need.id);
       setRecommendation(rec);
     } catch {
       toast('error', 'Không thể tải kết quả Smart Match.');
@@ -153,9 +187,10 @@ export default function StudentDashboard() {
       setClasses(c);
       setSubjects(s);
       setBrowseTutors(t);
+      setLearningNeeds(n);
 
       const firstActiveNeed = n.find((need) => need.status === 'ACTIVE') ?? n[0] ?? null;
-      setActiveNeed(firstActiveNeed);
+      setActiveNeed((current) => current ? n.find((need) => need.id === current.id) ?? firstActiveNeed : firstActiveNeed);
     } finally {
       setLoading(false);
     }
@@ -166,13 +201,14 @@ export default function StudentDashboard() {
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'RECOMMENDATION' && activeNeed && !recommendation) {
-      void fetchRecommendation(activeNeed.id);
-    }
-  }, [activeTab, activeNeed, recommendation]);
+    const queryFromUrl = searchParams.get('search') || '';
+    setSearchDraft(queryFromUrl);
+    setSubmittedSearch(queryFromUrl);
+  }, [searchParams]);
 
-  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const normalizedQuery = submittedSearch.trim().toLowerCase();
   const recommendedTutors = useMemo(() => recommendation?.recommended_tutors ?? [], [recommendation]);
+  const recommendedClasses = useMemo(() => recommendation?.recommended_classes ?? [], [recommendation]);
   const visibleSubjectFilters = useMemo(() => subjects.slice(0, 6), [subjects]);
   const subjectNameById = useMemo(
     () => new Map(subjects.map((subject) => [subject.id, subject.name])),
@@ -248,80 +284,151 @@ export default function StudentDashboard() {
     setTutorPage(1);
   }, [normalizedQuery, modeFilter, subjectFilter, activeTab]);
 
+  const recommendationClassResults = useMemo(() => {
+    return recommendedClasses.filter((rec) => {
+      const course = rec.course_class;
+      if (!includesQuery([
+        course.title,
+        course.grade_level,
+        course.goal,
+        course.location,
+        course.mode,
+        String(course.fee_per_session_per_student),
+      ], normalizedQuery)) return false;
+      if (!matchesMode(course.mode, modeFilter)) return false;
+      if (subjectFilter && course.subject_id !== subjectFilter) return false;
+      return true;
+    });
+  }, [recommendedClasses, normalizedQuery, modeFilter, subjectFilter]);
+
   const visibleClasses = activeTab === 'ALL' || activeTab === 'CLASS' ? classResults : [];
+  const visibleRecommendedClasses = activeTab === 'RECOMMENDATION' ? recommendationClassResults : [];
   const visibleTutors = (activeTab === 'ALL' || activeTab === 'TUTOR' || activeTab === 'RECOMMENDATION') ? tutorResults : [];
   const pagedClasses = visibleClasses.slice(0, classPage * PAGE_SIZE);
+  const pagedRecommendedClasses = visibleRecommendedClasses.slice(0, classPage * PAGE_SIZE);
   const pagedTutors = visibleTutors.slice(0, tutorPage * PAGE_SIZE);
   const hasMoreClasses = visibleClasses.length > pagedClasses.length;
+  const hasMoreRecommendedClasses = visibleRecommendedClasses.length > pagedRecommendedClasses.length;
   const hasMoreTutors = visibleTutors.length > pagedTutors.length;
-  const hasResults = visibleClasses.length > 0 || visibleTutors.length > 0 || (activeTab === 'RECOMMENDATION' && recLoading);
+  const hasRecommendationResults = visibleRecommendedClasses.length > 0 || visibleTutors.length > 0;
+  const hasResults = visibleClasses.length > 0 || visibleTutors.length > 0 || visibleRecommendedClasses.length > 0 || (activeTab === 'RECOMMENDATION' && recLoading);
+
+  const submitSearch = (event?: React.FormEvent) => {
+    event?.preventDefault();
+    const nextQuery = searchDraft.trim();
+    setSubmittedSearch(nextQuery);
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextQuery) {
+      nextParams.set('search', nextQuery);
+    } else {
+      nextParams.delete('search');
+    }
+    setSearchParams(nextParams, { replace: true });
+    if (activeTab === 'RECOMMENDATION' && !recommendation) {
+      setActiveTab('ALL');
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchDraft('');
+    setSubmittedSearch('');
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('search');
+    setSearchParams(nextParams, { replace: true });
+  };
 
   if (loading) return <PageLoading />;
 
   return (
-    <div className="mx-auto w-full animate-slide-up space-y-8">
+    <div className="mx-auto w-full animate-slide-up space-y-6 md:space-y-8">
       {/* Smart Match Banner */}
-      <section className="relative overflow-hidden rounded-2xl bg-primary-950 text-white">
+      <section className="relative overflow-hidden rounded-xl bg-primary-950 text-white shadow-lg">
         <img src={dashboardHero} alt="" className="absolute inset-0 h-full w-full object-cover opacity-30" />
-        <div className="relative z-10 p-8 md:p-10">
+        <div className="relative z-10 grid gap-5 p-5 md:gap-8 md:p-8 lg:grid-cols-[1.05fr_0.95fr] lg:p-10">
           <div className="max-w-2xl">
-            <span className="inline-block px-3 py-1 bg-white/10 rounded-full text-xs font-semibold tracking-wide mb-5 border border-white/10">
-              Smart Match
-            </span>
-            <h1 className="text-2xl font-bold leading-snug tracking-tight md:text-4xl">
-              Chưa biết học gì?
-              <br />
-              Để AI gợi ý cho bạn.
+            <h1 className="text-xl font-bold leading-snug tracking-tight md:text-4xl">
+              Khám phá lớp học và Smart Match trong một luồng rõ ràng.
             </h1>
-            <p className="mt-3 max-w-lg text-sm leading-relaxed text-white/60">
-              Tạo hồ sơ nhu cầu học tập trong 1 phút. Hệ thống sẽ tìm gia sư và lớp học phù hợp nhất.
+            <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/70 md:text-base">
+              Tìm thủ công khi bạn đã biết mình cần gì, hoặc tạo cấu hình để hệ thống chấm điểm theo môn học, cấp lớp, ngân sách, hình thức và lịch rảnh.
             </p>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <Button size="lg" className="bg-white !text-primary-950 hover:bg-white/90 border-none font-semibold" onClick={() => setShowSmartMatch(true)}>
-                Tạo cấu hình & nhận gợi ý
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap md:mt-7">
+              <Button size="lg" className="w-full border-none bg-white font-semibold !text-primary-950 hover:bg-white/90 sm:w-auto" onClick={() => setShowSmartMatch(true)}>
+                Tạo cấu hình và nhận gợi ý
               </Button>
               {activeNeed && (
-                <Button size="lg" variant="outline" className="!text-white/80 border-white/15 hover:bg-white/5" onClick={() => setActiveTab('RECOMMENDATION')}>
-                  Xem lại gợi ý cũ
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="hidden border-white/15 !text-white/80 hover:bg-white/5 sm:inline-flex"
+                  onClick={() => {
+                    setRecommendation(null);
+                    setActiveTab('RECOMMENDATION');
+                  }}
+                >
+                  Xem lại cấu hình gợi ý
                 </Button>
               )}
+            </div>
+            <div className="mt-5 grid grid-cols-3 gap-2 sm:hidden">
+              <SmartMatchStepCompact index="1" title="Cấu hình" />
+              <SmartMatchStepCompact index="2" title="Tiêu chí" />
+              <SmartMatchStepCompact index="3" title="Lý do" />
+            </div>
+          </div>
+          <div className="hidden rounded-xl border border-white/12 bg-white/10 p-4 backdrop-blur-md sm:block">
+            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+              <SmartMatchStep index="1" title="Tạo cấu hình" desc="Chọn môn, mục tiêu, hình thức, ngân sách và lịch rảnh." />
+              <SmartMatchStep index="2" title="Xem tiêu chí" desc="Bạn thấy hệ thống đang dùng dữ liệu nào để so khớp." />
+              <SmartMatchStep index="3" title="Đọc lý do" desc="Mỗi kết quả có điểm match và các lý do cụ thể." />
             </div>
           </div>
         </div>
       </section>
 
       {/* Search Bar */}
-      <section className="bg-white rounded-2xl p-4 shadow-sm border border-border">
-        <div className="flex items-center gap-3 bg-surface-secondary rounded-xl px-4 py-3 border border-border-light focus-within:border-primary-300 focus-within:ring-2 focus-within:ring-primary-100 transition-all">
+      <section className="rounded-xl border border-border-light bg-white p-3 shadow-xs sm:p-4">
+        <form onSubmit={submitSearch} className="flex flex-col gap-3 md:flex-row md:items-center">
+          <div className="flex flex-1 items-center gap-3 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 transition-all focus-within:border-primary-300 focus-within:ring-2 focus-within:ring-primary-100">
           <SearchIcon className="h-6 w-6 shrink-0 text-text-tertiary" />
           <input
-            value={searchQuery}
-            onChange={(event) => {
-              setSearchQuery(event.target.value);
-              if (activeTab === 'RECOMMENDATION') setActiveTab('ALL');
-            }}
+            value={searchDraft}
+            onChange={(event) => setSearchDraft(event.target.value)}
             placeholder="Tìm trực tiếp Toán, IELTS, tên gia sư..."
             className="min-w-0 flex-1 bg-transparent text-base font-medium outline-none placeholder:text-text-tertiary"
           />
-          {searchQuery && (
+          {(searchDraft || submittedSearch) && (
             <button
-              onClick={() => setSearchQuery('')}
+              type="button"
+              onClick={clearSearch}
               className="text-xs font-semibold text-text-tertiary hover:text-text-primary px-2"
             >
               XÓA
             </button>
           )}
+          </div>
+          <Button type="submit" className="w-full md:min-w-[128px] md:w-auto">Tìm kiếm</Button>
+        </form>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-medium text-text-tertiary">
+          {submittedSearch ? (
+            <span className="rounded-full bg-primary-50 px-3 py-1 text-primary-700">Đang áp dụng: "{submittedSearch}"</span>
+          ) : (
+            <span>Danh sách chưa bị lọc theo từ khóa. Nhập xong rồi bấm Tìm kiếm để áp dụng.</span>
+          )}
+          {searchDraft.trim() !== submittedSearch && searchDraft.trim() && (
+            <span className="rounded-full bg-warning-50 px-3 py-1 text-warning-700">Từ khóa mới chưa áp dụng</span>
+          )}
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-[auto_1fr_auto] lg:items-start">
           <div className="space-y-2">
             <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary">Hình thức</p>
-            <div className="inline-flex rounded-xl border border-border bg-surface-secondary p-1">
+            <div className="flex max-w-full overflow-x-auto rounded-xl border border-border bg-surface-secondary p-1">
               {(['ALL', 'ONLINE', 'OFFLINE'] as ModeFilter[]).map((mode) => (
                 <button
                   key={mode}
                   type="button"
                   onClick={() => setModeFilter(mode)}
-                  className={`rounded-lg px-3 py-2 text-xs font-bold transition-all ${
+                  className={`shrink-0 rounded-lg px-3 py-2 text-xs font-bold transition-all ${
                     modeFilter === mode
                       ? 'bg-white text-text-primary shadow-sm'
                       : 'text-text-secondary hover:text-text-primary'
@@ -335,13 +442,13 @@ export default function StudentDashboard() {
 
           <div className="space-y-2">
             <p className="text-xs font-bold uppercase tracking-wide text-text-tertiary">Môn học</p>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0">
               {visibleSubjectFilters.map((subject) => (
                 <button
                   key={subject.id}
                   type="button"
                   onClick={() => setSubjectFilter((current) => current === subject.id ? null : subject.id)}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
+                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
                     subjectFilter === subject.id
                       ? 'border-primary-400 bg-primary-50 text-primary-700'
                       : 'border-border bg-white text-text-secondary hover:border-primary-300 hover:text-text-primary'
@@ -375,25 +482,28 @@ export default function StudentDashboard() {
             {activeTab === 'RECOMMENDATION' ? 'Gợi ý thông minh (AI Match)' : 'Kết quả khám phá'}
           </h2>
           <p className="mt-1 text-sm text-text-secondary">
-            {activeTab === 'RECOMMENDATION' 
-              ? 'Dựa trên cấu hình học tập bạn vừa tạo.' 
-              : searchQuery ? `Đang hiển thị kết quả cho "${searchQuery}".` : 'Lớp học được ưu tiên trước, sau đó là gia sư.'}
+            {activeTab === 'RECOMMENDATION'
+              ? 'Chọn một cấu hình để xem hệ thống chấm điểm và lý do phù hợp.'
+              : submittedSearch ? `Đang hiển thị kết quả cho "${submittedSearch}".` : 'Lớp học được ưu tiên trước, sau đó là gia sư.'}
           </p>
         </div>
 
-        <div className="flex rounded-full border border-border bg-white p-1 overflow-x-auto custom-scrollbar shadow-sm">
+        <div className="custom-scrollbar flex w-full max-w-full overflow-x-auto rounded-full border border-border bg-white p-1 shadow-sm md:w-auto">
           {([
             ['ALL', `Tất cả`],
             ['CLASS', `Lớp học`],
             ['TUTOR', `Gia sư`],
-            ['RECOMMENDATION', `Gợi ý của tôi ✨`],
+            ['RECOMMENDATION', `Gợi ý của tôi`],
           ] as [ResultTab, string][]).map(([tab, label]) => {
-            if (tab === 'RECOMMENDATION' && !activeNeed) return null;
+            if (tab === 'RECOMMENDATION' && learningNeeds.length === 0) return null;
             return (
               <button
                 key={tab}
                 type="button"
-                onClick={() => setActiveTab(tab)}
+                onClick={() => {
+                  if (tab === 'RECOMMENDATION') setRecommendation(null);
+                  setActiveTab(tab);
+                }}
                 className={`shrink-0 rounded-full px-4 py-2 text-sm font-bold transition-all ${
                   activeTab === tab
                     ? tab === 'RECOMMENDATION' ? 'bg-gradient-to-r from-primary-600 to-primary-700 text-white shadow-md' : 'bg-text-primary text-white shadow-md'
@@ -408,11 +518,29 @@ export default function StudentDashboard() {
       </section>
 
       {/* Results */}
-      {activeTab === 'RECOMMENDATION' && recLoading ? (
-        <Card padding="lg" className="text-center bg-transparent py-16">
+      {activeTab === 'RECOMMENDATION' && !recLoading && !recommendation ? (
+        <RecommendationWorkspace
+          needs={learningNeeds}
+          activeNeed={activeNeed}
+          subjects={subjects}
+          onCreate={() => setShowSmartMatch(true)}
+          onRun={(need) => void fetchRecommendation(need)}
+        />
+      ) : activeTab === 'RECOMMENDATION' && recLoading ? (
+        <Card padding="lg" className="text-center bg-white py-16">
           <div className="mx-auto mb-4 h-12 w-12 rounded-full border-4 border-primary-200 border-t-primary-600 animate-spin" />
-          <p className="text-sm font-semibold text-text-secondary">AI đang phân tích nhu cầu của bạn...</p>
+          <p className="text-sm font-semibold text-text-secondary">Đang so khớp cấu hình với gia sư và lớp đang mở...</p>
+          <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-text-tertiary">Hệ thống đang lọc theo môn học, hình thức học, ngân sách, lịch rảnh, rating và kinh nghiệm rồi sắp xếp theo điểm phù hợp.</p>
         </Card>
+      ) : activeTab === 'RECOMMENDATION' && recommendation && !hasRecommendationResults ? (
+        <RecommendationResultsShell activeNeed={activeNeed} subjects={subjects} recommendation={recommendation}>
+          <Card padding="lg" className="border-dashed border-2 text-center bg-white py-12">
+            <h3 className="text-xl font-bold text-text-primary">Chưa có kết quả phù hợp với bộ lọc hiện tại</h3>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-text-secondary">
+              Thử xóa từ khóa, nới hình thức học hoặc tạo cấu hình mới với tiêu chí rộng hơn.
+            </p>
+          </Card>
+        </RecommendationResultsShell>
       ) : !hasResults ? (
         <Card padding="lg" className="border-dashed border-2 text-center bg-transparent py-16">
           <div className="mx-auto w-16 h-16 rounded-full bg-surface-secondary flex items-center justify-center mb-4">
@@ -425,6 +553,39 @@ export default function StudentDashboard() {
         </Card>
       ) : (
         <div className="space-y-10">
+          {activeTab === 'RECOMMENDATION' && recommendation && (
+            <RecommendationResultsShell activeNeed={activeNeed} subjects={subjects} recommendation={recommendation}>
+              <div className="space-y-8">
+                {visibleRecommendedClasses.length > 0 && (
+                  <section>
+                    <div className="mb-5 flex items-center justify-between">
+                      <h3 className="text-xl font-bold text-text-primary">Lớp nhóm được gợi ý ({visibleRecommendedClasses.length})</h3>
+                    </div>
+                    <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                      {pagedRecommendedClasses.map((rec) => (
+                        <RecommendedClassCard
+                          key={rec.course_class.id}
+                          rec={rec}
+                          subjectName={subjectNameById.get(rec.course_class.subject_id)}
+                          tutorProfile={rec.course_class.primary_tutor_id ? tutorRecById.get(rec.course_class.primary_tutor_id)?.tutor : undefined}
+                          onOpen={() => setDetailTarget({ type: 'RECOMMENDED_CLASS', data: rec })}
+                          onOpenTutor={() => openTutorProfile(rec.course_class.primary_tutor_id)}
+                        />
+                      ))}
+                    </div>
+                    {hasMoreRecommendedClasses && (
+                      <div className="mt-6 text-center">
+                        <Button variant="outline" className="px-8" onClick={() => setClassPage((page) => page + 1)}>
+                          Xem thêm {visibleRecommendedClasses.length - pagedRecommendedClasses.length} lớp học
+                        </Button>
+                      </div>
+                    )}
+                  </section>
+                )}
+              </div>
+            </RecommendationResultsShell>
+          )}
+
           {visibleClasses.length > 0 && activeTab !== 'RECOMMENDATION' && (
             <section>
               <div className="mb-5 flex items-center justify-between">
@@ -491,10 +652,11 @@ export default function StudentDashboard() {
         open={showSmartMatch}
         onClose={() => setShowSmartMatch(false)}
         subjects={subjects}
-        onCreated={() => { 
-          setShowSmartMatch(false); 
-          setRecommendation(null);
-          loadData().then(() => setActiveTab('RECOMMENDATION')); 
+        onCreated={(need) => {
+          setShowSmartMatch(false);
+          setLearningNeeds((current) => [need, ...current.filter((item) => item.id !== need.id)]);
+          void fetchRecommendation(need);
+          void loadData();
         }}
         toast={toast}
       />
@@ -538,6 +700,214 @@ export default function StudentDashboard() {
         }}
       />
     </div>
+  );
+}
+
+function SmartMatchStep({ index, title, desc }: { index: string; title: string; desc: string }) {
+  return (
+    <div className="flex gap-3 rounded-lg border border-white/10 bg-white/8 p-3">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-sm font-extrabold text-primary-950">
+        {index}
+      </div>
+      <div>
+        <p className="text-sm font-bold text-white">{title}</p>
+        <p className="mt-1 text-xs leading-5 text-white/62">{desc}</p>
+      </div>
+    </div>
+  );
+}
+
+function SmartMatchStepCompact({ index, title }: { index: string; title: string }) {
+  return (
+    <div className="rounded-lg border border-white/12 bg-white/10 px-2 py-2 text-center backdrop-blur-md">
+      <div className="mx-auto flex h-7 w-7 items-center justify-center rounded-lg bg-white text-xs font-extrabold text-primary-950">
+        {index}
+      </div>
+      <p className="mt-1 text-[11px] font-bold leading-tight text-white/85">{title}</p>
+    </div>
+  );
+}
+
+function getSubjectName(subjects: SubjectResponse[], subjectId: number | null | undefined) {
+  return subjects.find((subject) => subject.id === subjectId)?.name || 'Chưa chọn môn';
+}
+
+function NeedCriteria({ need, subjects }: { need: LearningNeedResponse; subjects: SubjectResponse[] }) {
+  const scheduleText = need.schedules.length > 0
+    ? need.schedules.map((schedule) => `${dayNames[schedule.day_of_week]} ${getTimeSlotLabel(schedule.time_slot)}`).join(', ')
+    : 'Chưa giới hạn lịch';
+  const budgetText = need.budget_per_session_max
+    ? `Tối đa ${toCurrency(need.budget_per_session_max)} / buổi`
+    : 'Chưa giới hạn ngân sách';
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {[
+        getSubjectName(subjects, need.subject_id),
+        need.grade_level || 'Chưa nêu cấp lớp',
+        getModeLabel(need.preferred_mode),
+        getLearningTypeLabel(need.preferred_learning_type),
+        budgetText,
+        scheduleText,
+      ].map((item) => (
+        <span key={item} className="rounded-full border border-border-light bg-white px-3 py-1 text-xs font-semibold text-text-secondary">
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function RecommendationWorkspace({
+  needs,
+  activeNeed,
+  subjects,
+  onCreate,
+  onRun,
+}: {
+  needs: LearningNeedResponse[];
+  activeNeed: LearningNeedResponse | null;
+  subjects: SubjectResponse[];
+  onCreate: () => void;
+  onRun: (need: LearningNeedResponse) => void;
+}) {
+  return (
+    <section className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
+      <Card padding="lg" className="bg-white">
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-xl font-bold tracking-tight text-text-primary">Chọn cấu hình để nhận gợi ý</h3>
+            <p className="mt-1 text-sm leading-6 text-text-secondary">
+              Mỗi cấu hình là một bộ tiêu chí riêng. Chọn đúng cấu hình trước khi chạy lại thuật toán.
+            </p>
+          </div>
+          <Button onClick={onCreate}>Tạo cấu hình mới</Button>
+        </div>
+
+        {needs.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border bg-surface-secondary p-8 text-center">
+            <h4 className="font-bold text-text-primary">Bạn chưa có cấu hình học tập</h4>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-text-secondary">
+              Tạo cấu hình để Smart Match có dữ liệu so khớp thay vì chỉ duyệt danh sách thủ công.
+            </p>
+            <div className="mt-4">
+              <Button onClick={onCreate}>Tạo cấu hình</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {needs.map((need) => {
+              const active = activeNeed?.id === need.id;
+              return (
+                <article
+                  key={need.id}
+                  className={`rounded-lg border p-4 transition-all ${
+                    active ? 'border-primary-300 bg-primary-50/60 shadow-sm' : 'border-border-light bg-white hover:border-primary-200'
+                  }`}
+                >
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="font-bold text-text-primary">
+                          {getSubjectName(subjects, need.subject_id)} {need.grade_level ? `· ${need.grade_level}` : ''}
+                        </h4>
+                        {active && (
+                          <span className="rounded-full bg-primary-100 px-2.5 py-1 text-xs font-bold text-primary-700">Đang chọn</span>
+                        )}
+                      </div>
+                      {need.goal && <p className="mt-2 line-clamp-2 text-sm leading-6 text-text-secondary">{need.goal}</p>}
+                    </div>
+                    <Button size="sm" onClick={() => onRun(need)}>
+                      Nhận gợi ý
+                    </Button>
+                  </div>
+                  <div className="mt-3">
+                    <NeedCriteria need={need} subjects={subjects} />
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      <Card padding="lg" className="bg-white">
+        <div className="mb-5">
+          <h3 className="text-xl font-bold tracking-tight text-text-primary">Smart Match chấm điểm như thế nào?</h3>
+          <p className="mt-1 text-sm leading-6 text-text-secondary">
+            Đây là thuật toán hybrid trong backend: lọc ứng viên không phù hợp trước, sau đó cộng điểm theo từng tiêu chí.
+          </p>
+        </div>
+        <div className="space-y-3">
+          {[
+            ['Môn học', '30 điểm', 'Bắt buộc khớp môn khi cấu hình có môn học.'],
+            ['Cấp lớp', '15 điểm', 'Ưu tiên gia sư/lớp có grade level gần mục tiêu.'],
+            ['Ngân sách', '15 điểm', 'Ưu tiên học phí nằm trong mức bạn khai báo.'],
+            ['Lịch rảnh', '15 điểm', 'So lịch mong muốn với lịch rảnh của gia sư.'],
+            ['Hình thức', '10 điểm', 'Online, trực tiếp hoặc linh hoạt.'],
+            ['Đánh giá và kinh nghiệm', '15 điểm', 'Cộng thêm theo rating, số lượt đánh giá và năm kinh nghiệm.'],
+          ].map(([label, value, desc]) => (
+            <div key={label} className="flex gap-3 rounded-lg border border-border-light bg-surface-secondary p-3">
+              <CheckCircleIcon className="mt-0.5 h-5 w-5 shrink-0 text-primary-700" />
+              <div className="min-w-0">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-bold text-text-primary">{label}</p>
+                  <span className="shrink-0 text-xs font-extrabold text-primary-700">{value}</span>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-text-secondary">{desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </section>
+  );
+}
+
+function RecommendationResultsShell({
+  activeNeed,
+  subjects,
+  recommendation,
+  children,
+}: {
+  activeNeed: LearningNeedResponse | null;
+  subjects: SubjectResponse[];
+  recommendation: RecommendationResponse;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-5">
+      <div className="rounded-xl border border-primary-100 bg-white p-5 shadow-xs">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-700">Smart Match result</p>
+            <h3 className="mt-2 text-2xl font-bold tracking-tight text-text-primary">
+              {activeNeed ? `${getSubjectName(subjects, activeNeed.subject_id)} ${activeNeed.grade_level ? `· ${activeNeed.grade_level}` : ''}` : 'Kết quả gợi ý'}
+            </h3>
+            {activeNeed?.goal && <p className="mt-2 max-w-3xl text-sm leading-6 text-text-secondary">{activeNeed.goal}</p>}
+            {activeNeed && (
+              <div className="mt-4">
+                <NeedCriteria need={activeNeed} subjects={subjects} />
+              </div>
+            )}
+          </div>
+          <div className="grid min-w-[220px] grid-cols-2 gap-2">
+            <div className="rounded-lg border border-border-light bg-surface-secondary p-3 text-center">
+              <p className="text-2xl font-extrabold text-text-primary">{recommendation.recommended_classes.length}</p>
+              <p className="text-xs font-semibold text-text-tertiary">Lớp nhóm</p>
+            </div>
+            <div className="rounded-lg border border-border-light bg-surface-secondary p-3 text-center">
+              <p className="text-2xl font-extrabold text-text-primary">{recommendation.recommended_tutors.length}</p>
+              <p className="text-xs font-semibold text-text-tertiary">Gia sư 1-1</p>
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 rounded-lg border border-border-light bg-surface-secondary p-3 text-xs leading-5 text-text-secondary">
+          <strong className="text-text-primary">Cách đọc kết quả:</strong> điểm match càng cao nghĩa là càng khớp tiêu chí. Lý do phù hợp bên dưới từng card lấy trực tiếp từ các bước chấm điểm của backend.
+        </div>
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -635,6 +1005,97 @@ function ClassCard({
   );
 }
 
+function RecommendedClassCard({
+  rec,
+  subjectName,
+  tutorProfile,
+  onOpen,
+  onOpenTutor,
+}: {
+  rec: RecommendedClass;
+  subjectName?: string;
+  tutorProfile?: TutorPublicResponse;
+  onOpen: () => void;
+  onOpenTutor: () => void;
+}) {
+  const course = rec.course_class;
+  const modeMeta = getClassModeMeta(course);
+  const totalFee = getCourseTotalFee(course);
+
+  return (
+    <article className="group flex h-full cursor-pointer flex-col rounded-xl border border-primary-100 bg-white p-5 shadow-sm transition-all hover:-translate-y-1 hover:border-primary-300 hover:shadow-lg" onClick={onOpen}>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-primary-600">
+            {subjectName || 'Lớp nhóm'} · {course.grade_level}
+          </p>
+          <h4 className="line-clamp-2 text-lg font-bold leading-snug text-text-primary group-hover:text-primary-800">
+            {course.title}
+          </h4>
+        </div>
+        <span className="shrink-0 rounded-full bg-primary-700 px-3 py-1 text-xs font-extrabold text-white">
+          {formatMatchScore(rec.score)}% Match
+        </span>
+      </div>
+
+      <div className="space-y-2 rounded-lg border border-border-light bg-surface-secondary p-3">
+        <p className="flex items-center gap-2 text-sm font-medium text-text-secondary">
+          <CalendarIcon className="h-4 w-4 shrink-0 text-primary-600" />
+          <span>{course.total_sessions} buổi · {modeMeta.detail}</span>
+        </p>
+        {course.tutor_name && (
+          <div className="flex items-center justify-between gap-3">
+            <p className="truncate text-sm font-medium text-text-secondary">
+              GV: <span className="font-bold text-text-primary">{course.tutor_name}</span>
+            </p>
+            {tutorProfile && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpenTutor();
+                }}
+                className="shrink-0 rounded-md px-2 py-1 text-xs font-bold text-primary-700 hover:bg-primary-50"
+              >
+                Hồ sơ
+              </button>
+            )}
+          </div>
+        )}
+        <div className="flex items-end justify-between gap-3 border-t border-border-light pt-3">
+          <p className="text-xl font-extrabold text-primary-800">{toCurrency(totalFee)}</p>
+          <span className={`rounded-full border px-3 py-1 text-xs font-extrabold ${modeMeta.classes}`}>{modeMeta.label}</span>
+        </div>
+      </div>
+
+      {rec.reasons.length > 0 && (
+        <div className="mt-4 border-t border-border-light pt-3">
+          <p className="mb-1 text-xs font-bold uppercase text-text-tertiary">Lý do phù hợp</p>
+          <div className="space-y-1">
+            {rec.reasons.slice(0, 3).map((reason) => (
+              <p key={reason} className="flex gap-2 text-xs leading-5 text-text-secondary">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary-500" />
+                <span>{reason}</span>
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpen();
+        }}
+        className="mt-auto w-full rounded-lg border border-primary-100 bg-white px-3 py-2 text-sm font-bold text-primary-700 transition-colors hover:bg-primary-50"
+      >
+        Xem chi tiết lớp
+      </button>
+    </article>
+  );
+}
+
 function TutorCard({ rec, isRecommendation, onOpen }: { rec: RecommendedTutor; isRecommendation?: boolean; onOpen: () => void }) {
   const lowestFee = rec.tutor.subjects.reduce<number | null>((lowest, subject) => {
     const fee = Number(subject.fee_per_session);
@@ -657,7 +1118,7 @@ function TutorCard({ rec, isRecommendation, onOpen }: { rec: RecommendedTutor; i
         {isRecommendation && (
           <div className="shrink-0 flex flex-col items-end">
             <span className="rounded-full bg-gradient-to-r from-amber-400 to-orange-500 px-3 py-1 text-xs font-bold text-white shadow-sm">
-              {Number(rec.score || 0).toFixed(0)}% Match
+              {formatMatchScore(rec.score)}% Match
             </span>
           </div>
         )}
@@ -738,8 +1199,9 @@ function DetailModal({
 }) {
   if (!target) return null;
 
-  if (target.type === 'CLASS') {
-    const course = target.data;
+  if (target.type === 'CLASS' || target.type === 'RECOMMENDED_CLASS') {
+    const recommendationItem = target.type === 'RECOMMENDED_CLASS' ? target.data : null;
+    const course = target.type === 'RECOMMENDED_CLASS' ? target.data.course_class : target.data;
     const modeMeta = getClassModeMeta(course);
     const subjectName = subjectNameById.get(course.subject_id);
     const tutorRec = course.primary_tutor_id ? tutorRecById.get(course.primary_tutor_id) : undefined;
@@ -791,6 +1253,28 @@ function DetailModal({
               ) : (
                 <span className="text-xs font-semibold text-text-tertiary">Chưa có hồ sơ công khai</span>
               )}
+            </div>
+          )}
+
+          {recommendationItem && (
+            <div className="rounded-xl border border-primary-100 bg-white p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-primary-700">Điểm Smart Match</p>
+                  <p className="mt-1 text-3xl font-extrabold text-primary-800">{formatMatchScore(recommendationItem.score)}%</p>
+                </div>
+                <div className="min-w-0 flex-1 sm:max-w-md">
+                  <p className="text-sm font-bold text-text-primary">Vì sao lớp này được gợi ý?</p>
+                  <div className="mt-2 space-y-1.5">
+                    {recommendationItem.reasons.map((reason) => (
+                      <p key={reason} className="flex gap-2 text-sm leading-6 text-text-secondary">
+                        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary-500" />
+                        <span>{reason}</span>
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -934,7 +1418,7 @@ function CreateNeedModal({
   open: boolean;
   onClose: () => void;
   subjects: SubjectResponse[];
-  onCreated: () => void;
+  onCreated: (need: LearningNeedResponse) => void;
   toast: (type: 'success' | 'error', msg: string) => void;
 }) {
   const [loading, setLoading] = useState(false);
@@ -981,9 +1465,9 @@ function CreateNeedModal({
 
     setLoading(true);
     try {
-      await learningNeedApi.create(form);
+      const need = await learningNeedApi.create(form);
       toast('success', 'Đã khởi tạo hồ sơ AI Match thành công!');
-      onCreated();
+      onCreated(need);
     } catch {
       toast('error', 'Có lỗi xảy ra, vui lòng thử lại.');
     } finally {

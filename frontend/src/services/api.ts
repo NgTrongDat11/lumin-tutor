@@ -52,6 +52,7 @@ import type {
   AdminStaffResponse,
   AdminStatsResponse,
   AuditLogResponse,
+  NotificationResponse,
 } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
@@ -403,6 +404,23 @@ export const reviewApi = {
 
   listMy: () =>
     api.get<ApiResponse<ReviewResponse[]>>('/reviews/my').then(unwrap),
+};
+
+/* ═══════════════════════════════════════════════════
+   NOTIFICATIONS
+   ═══════════════════════════════════════════════════ */
+export const notificationApi = {
+  list: (limit = 5) =>
+    api.get<ApiResponse<NotificationResponse[]>>('/notifications', { params: { limit } }).then(unwrap),
+
+  unreadCount: () =>
+    api.get<ApiResponse<{ count: number }>>('/notifications/unread-count').then(unwrap),
+
+  markRead: (id: number) =>
+    api.put<ApiResponse<null>>(`/notifications/${id}/read`).then(unwrap),
+
+  markAllRead: () =>
+    api.put<ApiResponse<null>>('/notifications/read-all').then(unwrap),
 };
 
 export interface ValidationErrorDetail {

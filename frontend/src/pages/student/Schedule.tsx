@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { scheduleApi } from '../../services/api';
 import type { LearningSessionResponse } from '../../types';
 import { PageLoading } from '../../components/ui/Spinner';
@@ -88,12 +89,14 @@ const PERIODS = ['Sáng', 'Chiều', 'Tối'];
 const DAYS = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ Nhật'];
 
 export default function StudentSchedule() {
+  const [searchParams] = useSearchParams();
   const [sessions, setSessions] = useState<LearningSessionResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('WEEK');
   const [currentWeekStart, setCurrentWeekStart] = useState<Date>(getStartOfWeek(new Date()));
   const [currentMonthStart, setCurrentMonthStart] = useState<Date>(getStartOfMonth(new Date()));
   const [selectedSession, setSelectedSession] = useState<LearningSessionResponse | null>(null);
+  const highlightedSessionId = Number(searchParams.get('sessionId'));
 
   useEffect(() => {
     scheduleApi.listSessions()
@@ -101,6 +104,29 @@ export default function StudentSchedule() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!Number.isFinite(highlightedSessionId) || highlightedSessionId <= 0 || sessions.length === 0) return;
+    const targetSession = sessions.find((session) => session.id === highlightedSessionId);
+    if (!targetSession) return;
+
+    const targetDate = getSessionDate(targetSession.session_date);
+    setViewMode('WEEK');
+    setCurrentWeekStart(getStartOfWeek(targetDate));
+    setCurrentMonthStart(getStartOfMonth(targetDate));
+  }, [highlightedSessionId, sessions]);
+
+  useEffect(() => {
+    if (!Number.isFinite(highlightedSessionId) || highlightedSessionId <= 0 || loading) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(`session-${highlightedSessionId}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'center',
+      });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [currentWeekStart, highlightedSessionId, loading, viewMode]);
 
   const weekEnd = useMemo(() => {
     const d = new Date(currentWeekStart);
@@ -193,6 +219,15 @@ export default function StudentSchedule() {
     setCurrentMonthStart(getStartOfMonth(today));
   };
 
+  const handleNextSessionClick = () => {
+    if (!scheduleStats.nextSession) return;
+    if (window.matchMedia('(max-width: 1023px)').matches) {
+      scrollToScheduleTarget(`session-${scheduleStats.nextSession.id}`);
+      return;
+    }
+    setSelectedSession(scheduleStats.nextSession);
+  };
+
   return (
     <div className="mx-auto max-w-7xl animate-slide-up space-y-3">
       <div className="rounded-lg border border-border-light bg-white p-3 shadow-xs">
@@ -210,12 +245,12 @@ export default function StudentSchedule() {
           </div>
 
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={goToday}>Hôm nay</Button>
+            <div className="flex items-center gap-1 sm:gap-2">
+              <Button variant="outline" size="sm" className="shrink-0 whitespace-nowrap" onClick={goToday}>Hôm nay</Button>
               <button onClick={prevRange} className="rounded-lg p-2 text-text-secondary transition-colors hover:bg-surface-secondary">
                 <ArrowRightIcon className="h-5 w-5 rotate-180" />
               </button>
-              <span className="min-w-[190px] text-center text-sm font-bold text-text-primary">
+              <span className="min-w-0 flex-1 text-center text-sm font-bold text-text-primary sm:min-w-[190px]">
                 {viewMode === 'WEEK'
                   ? `${currentWeekStart.getDate()}/${currentWeekStart.getMonth() + 1} - ${weekEnd.getDate()}/${weekEnd.getMonth() + 1}`
                   : formatMonthTitle(currentMonthStart)}
@@ -245,29 +280,54 @@ export default function StudentSchedule() {
         {scheduleStats.nextSession && (
           <button
             type="button"
-            onClick={() => setSelectedSession(scheduleStats.nextSession)}
+            onClick={handleNextSessionClick}
             className="mt-3 flex w-full items-center justify-between gap-3 rounded-lg bg-primary-50 px-3 py-2 text-left text-sm transition-colors hover:bg-primary-100"
           >
             <span className="truncate text-text-secondary">
               <strong className="text-primary-700">Buổi tiếp theo:</strong> {getSessionTitle(scheduleStats.nextSession)} · {formatSessionDate(scheduleStats.nextSession)} · {formatSessionTime(scheduleStats.nextSession)}
             </span>
-            <span className="shrink-0 text-xs font-bold text-primary-700">Chi tiết</span>
+            <span className="shrink-0 text-xs font-bold text-primary-700">
+              <span className="lg:hidden">Tới buổi</span>
+              <span className="hidden lg:inline">Chi tiết</span>
+            </span>
           </button>
         )}
       </div>
 
       {viewMode === 'WEEK' ? (
-        <WeekScheduleGrid
-          currentWeekStart={currentWeekStart}
-          grid={grid}
-          onSelectSession={setSelectedSession}
-        />
+        <>
+          <MobileWeekAgenda
+            currentWeekStart={currentWeekStart}
+            sessions={weekSessions}
+            highlightedSessionId={highlightedSessionId}
+            onSelectSession={setSelectedSession}
+          />
+          <div className="hidden lg:block">
+            <WeekScheduleGrid
+              currentWeekStart={currentWeekStart}
+              grid={grid}
+              highlightedSessionId={highlightedSessionId}
+              onSelectSession={setSelectedSession}
+            />
+          </div>
+        </>
       ) : (
-        <MonthScheduleCalendar
-          currentMonthStart={currentMonthStart}
-          sessions={monthSessions}
-          onSelectSession={setSelectedSession}
-        />
+        <>
+          <MobileMonthAgenda
+            currentMonthStart={currentMonthStart}
+            sessions={monthSessions}
+            highlightedSessionId={highlightedSessionId}
+            onSelectSession={setSelectedSession}
+          />
+          <div className="hidden lg:block">
+            <MonthScheduleCalendar
+              currentMonthStart={currentMonthStart}
+              sessions={monthSessions}
+              highlightedSessionId={highlightedSessionId}
+              onSelectSession={setSelectedSession}
+            />
+          </div>
+        </>
       )}
 
       <SessionDetailModal session={selectedSession} onClose={() => setSelectedSession(null)} />
@@ -275,13 +335,263 @@ export default function StudentSchedule() {
   );
 }
 
+function MobileWeekAgenda({
+  currentWeekStart,
+  sessions,
+  highlightedSessionId,
+  onSelectSession,
+}: {
+  currentWeekStart: Date;
+  sessions: LearningSessionResponse[];
+  highlightedSessionId: number;
+  onSelectSession: (session: LearningSessionResponse) => void;
+}) {
+  const weekDays = useMemo(() => {
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(currentWeekStart);
+      date.setDate(date.getDate() + index);
+      return date;
+    });
+  }, [currentWeekStart]);
+
+  const sessionsByDate = useMemo(() => groupSessionsByDate(sessions), [sessions]);
+  const hasSessions = sessions.length > 0;
+
+  return (
+    <div className="space-y-3 lg:hidden">
+      <div className="overflow-x-auto pb-1">
+        <div className="flex min-w-max gap-2">
+          {weekDays.map((day, index) => {
+            const dateKey = getDateKey(day);
+            const daySessions = sessionsByDate.get(dateKey) ?? [];
+            const today = isSameDate(day, new Date());
+            const dayLabel = index === 6 ? 'CN' : `T${index + 2}`;
+            return (
+              <button
+                key={dateKey}
+                type="button"
+                onClick={() => scrollToScheduleTarget(`mobile-day-${dateKey}`)}
+                aria-label={`Xem lịch ${formatMobileDayTitle(day)}`}
+                className={`flex w-16 shrink-0 flex-col items-center rounded-xl border px-2 py-2 text-center transition-colors ${
+                  today
+                    ? 'border-primary-200 bg-primary-50 text-primary-800'
+                    : daySessions.length > 0
+                      ? 'border-border-light bg-white text-text-primary'
+                      : 'border-border-light bg-surface-secondary text-text-tertiary'
+                }`}
+              >
+                <span className="text-[11px] font-bold uppercase">{dayLabel}</span>
+                <span className="mt-0.5 text-lg font-semibold leading-none">{day.getDate()}</span>
+                <span className="mt-1 rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-bold text-primary-700">
+                  {daySessions.length}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {!hasSessions ? (
+        <div className="rounded-2xl border border-dashed border-border bg-white p-6 text-center shadow-sm">
+          <CalendarIcon className="mx-auto mb-3 h-7 w-7 text-text-tertiary" />
+          <h3 className="font-bold text-text-primary">Tuần này chưa có buổi học</h3>
+          <p className="mt-1 text-sm leading-6 text-text-tertiary">Bạn có thể chuyển tuần hoặc quay lại hôm nay để kiểm tra lịch khác.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {weekDays.map((day) => {
+            const dateKey = getDateKey(day);
+            const daySessions = sessionsByDate.get(dateKey) ?? [];
+            return (
+              <section key={dateKey} id={`mobile-day-${dateKey}`} className="rounded-2xl border border-border-light bg-white p-4 shadow-sm scroll-mt-24">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-bold text-text-primary">{formatMobileDayTitle(day)}</h2>
+                    <p className="text-xs font-medium text-text-tertiary">{daySessions.length} buổi</p>
+                  </div>
+                  {isSameDate(day, new Date()) && (
+                    <span className="rounded-full bg-primary-50 px-2.5 py-1 text-xs font-bold text-primary-700">Hôm nay</span>
+                  )}
+                </div>
+
+                {daySessions.length === 0 ? (
+                  <p className="mt-4 rounded-xl bg-surface-secondary px-3 py-3 text-sm text-text-tertiary">Không có lịch học.</p>
+                ) : (
+                  <div className="mt-4 space-y-2">
+                    {daySessions.map((session) => (
+                      <MobileSessionCard
+                        key={session.id}
+                        session={session}
+                        highlighted={session.id === highlightedSessionId}
+                        onClick={() => onSelectSession(session)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MobileMonthAgenda({
+  currentMonthStart,
+  sessions,
+  highlightedSessionId,
+  onSelectSession,
+}: {
+  currentMonthStart: Date;
+  sessions: LearningSessionResponse[];
+  highlightedSessionId: number;
+  onSelectSession: (session: LearningSessionResponse) => void;
+}) {
+  const sessionsByDate = useMemo(() => groupSessionsByDate(sessions), [sessions]);
+  const calendarDays = useMemo(() => getMonthCalendarDays(currentMonthStart), [currentMonthStart]);
+  const activeDates = calendarDays.filter((day) => {
+    const dateKey = getDateKey(day);
+    return day.getMonth() === currentMonthStart.getMonth() && (sessionsByDate.get(dateKey)?.length ?? 0) > 0;
+  });
+
+  if (sessions.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-border bg-white p-6 text-center shadow-sm lg:hidden">
+        <CalendarIcon className="mx-auto mb-3 h-7 w-7 text-text-tertiary" />
+        <h3 className="font-bold text-text-primary">Tháng này chưa có buổi học</h3>
+        <p className="mt-1 text-sm leading-6 text-text-tertiary">Bạn có thể chuyển tháng hoặc quay lại hôm nay để xem lịch khác.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 lg:hidden">
+      <div className="grid grid-cols-7 gap-1 rounded-2xl border border-border-light bg-white p-2 shadow-sm">
+        {calendarDays.map((day) => {
+          const dateKey = getDateKey(day);
+          const count = sessionsByDate.get(dateKey)?.length ?? 0;
+          const current = day.getMonth() === currentMonthStart.getMonth();
+          const today = isSameDate(day, new Date());
+          return (
+            <button
+              key={dateKey}
+              type="button"
+              onClick={() => count > 0 && scrollToScheduleTarget(`mobile-month-${dateKey}`)}
+              disabled={count === 0}
+              aria-label={`Xem lịch ${formatMobileDayTitle(day)}`}
+              className={`flex aspect-square min-w-0 flex-col items-center justify-center rounded-lg text-xs transition-colors ${
+                today
+                  ? 'bg-primary-600 text-white'
+                  : count > 0
+                    ? 'bg-primary-50 text-primary-800'
+                    : current
+                      ? 'text-text-secondary'
+                      : 'text-text-tertiary opacity-50'
+              }`}
+            >
+              <span className="font-bold">{day.getDate()}</span>
+              {count > 0 && <span className={`mt-0.5 h-1.5 w-1.5 rounded-full ${today ? 'bg-white' : 'bg-primary-600'}`} />}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="space-y-3">
+        {activeDates.map((day) => {
+          const dateKey = getDateKey(day);
+          const daySessions = sessionsByDate.get(dateKey) ?? [];
+          return (
+            <section key={dateKey} id={`mobile-month-${dateKey}`} className="rounded-2xl border border-border-light bg-white p-4 shadow-sm scroll-mt-24">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-sm font-bold text-text-primary">{formatMobileDayTitle(day)}</h2>
+                <span className="rounded-full bg-surface-secondary px-2.5 py-1 text-xs font-bold text-text-secondary">{daySessions.length} buổi</span>
+              </div>
+              <div className="space-y-2">
+                {daySessions.map((session) => (
+                  <MobileSessionCard
+                    key={session.id}
+                    session={session}
+                    highlighted={session.id === highlightedSessionId}
+                    onClick={() => onSelectSession(session)}
+                  />
+                ))}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function MobileSessionCard({
+  session,
+  highlighted,
+  onClick,
+}: {
+  session: LearningSessionResponse;
+  highlighted: boolean;
+  onClick: () => void;
+}) {
+  const isCancelled = session.status === 'CANCELLED' || session.status === 'NO_SHOW';
+  const isAttendanceNeeded = isAttendanceNeededSession(session);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      id={`session-${session.id}`}
+      className={`w-full scroll-mt-28 rounded-xl border p-3 text-left transition-all ${
+        isAttendanceNeeded
+          ? 'border-warning-200 bg-warning-50 text-warning-900'
+          : isCancelled
+            ? 'border-danger-100 bg-danger-50 text-danger-900'
+            : session.status === 'COMPLETED'
+              ? 'border-success-100 bg-success-50 text-success-800'
+              : 'border-primary-100 bg-primary-50 text-primary-900'
+      } ${highlighted ? 'ring-2 ring-primary-500 ring-offset-2' : ''}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-bold text-text-secondary">
+              {PERIODS[getPeriod(session.start_time)]}
+            </span>
+            <span className="text-xs font-bold text-text-secondary">{getSessionTypeLabel(session)}</span>
+          </div>
+          <h3 className="mt-2 line-clamp-2 text-sm font-bold leading-snug">{getSessionTitle(session)}</h3>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-text-secondary">
+            <span className="inline-flex items-center gap-1">
+              <ClockIcon className="h-3.5 w-3.5" />
+              {formatSessionTime(session)}
+            </span>
+            <span className="truncate">{session.tutor_name || `GS #${session.tutor_id}`}</span>
+          </div>
+        </div>
+        <div className="shrink-0">
+          {isAttendanceNeeded ? (
+            <span className="inline-flex rounded-full bg-warning-100 px-2 py-0.5 text-[11px] font-bold text-warning-700">
+              Chờ cập nhật
+            </span>
+          ) : (
+            getStatusBadge(session.status)
+          )}
+        </div>
+      </div>
+    </button>
+  );
+}
+
 function WeekScheduleGrid({
   currentWeekStart,
   grid,
+  highlightedSessionId,
   onSelectSession,
 }: {
   currentWeekStart: Date;
   grid: LearningSessionResponse[][][];
+  highlightedSessionId: number;
   onSelectSession: (session: LearningSessionResponse) => void;
 }) {
   const getDayHeader = (index: number) => {
@@ -324,7 +634,12 @@ function WeekScheduleGrid({
                   <div key={`${period}-${day}`} className={`min-h-[170px] border-r border-border-light p-2 last:border-r-0 ${isToday ? 'bg-primary-50/30' : ''}`}>
                     <div className="space-y-2">
                       {grid[periodIndex][dayIndex].map((session) => (
-                        <SessionBlock key={session.id} session={session} onClick={() => onSelectSession(session)} />
+                        <SessionBlock
+                          key={session.id}
+                          session={session}
+                          highlighted={session.id === highlightedSessionId}
+                          onClick={() => onSelectSession(session)}
+                        />
                       ))}
                     </div>
                   </div>
@@ -345,6 +660,34 @@ function getDateKey(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function groupSessionsByDate(sessions: LearningSessionResponse[]) {
+  const groups = new Map<string, LearningSessionResponse[]>();
+  sessions.forEach((session) => {
+    const existing = groups.get(session.session_date) ?? [];
+    existing.push(session);
+    groups.set(session.session_date, existing);
+  });
+  groups.forEach((items) => {
+    items.sort((a, b) => getSessionDateTime(a).getTime() - getSessionDateTime(b).getTime());
+  });
+  return groups;
+}
+
+function formatMobileDayTitle(date: Date) {
+  return date.toLocaleDateString('vi-VN', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'numeric',
+  });
+}
+
+function scrollToScheduleTarget(id: string) {
+  const target = document.getElementById(id);
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+  window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${id}`);
+}
+
 function getMonthCalendarDays(monthStart: Date) {
   const first = getStartOfWeek(monthStart);
   const last = getEndOfMonth(monthStart);
@@ -363,10 +706,12 @@ function getMonthCalendarDays(monthStart: Date) {
 function MonthScheduleCalendar({
   currentMonthStart,
   sessions,
+  highlightedSessionId,
   onSelectSession,
 }: {
   currentMonthStart: Date;
   sessions: LearningSessionResponse[];
+  highlightedSessionId: number;
   onSelectSession: (session: LearningSessionResponse) => void;
 }) {
   const sessionsByDate = useMemo(() => {
@@ -437,6 +782,7 @@ function MonthScheduleCalendar({
                       <MonthSessionPill
                         key={session.id}
                         session={session}
+                        highlighted={session.id === highlightedSessionId}
                         onClick={() => onSelectSession(session)}
                       />
                     ))}
@@ -456,7 +802,15 @@ function MonthScheduleCalendar({
   );
 }
 
-function MonthSessionPill({ session, onClick }: { session: LearningSessionResponse; onClick: () => void }) {
+function MonthSessionPill({
+  session,
+  highlighted,
+  onClick,
+}: {
+  session: LearningSessionResponse;
+  highlighted: boolean;
+  onClick: () => void;
+}) {
   const isAttendanceNeeded = isAttendanceNeededSession(session);
   const title = `${getSessionTitle(session)} · ${formatSessionTime(session)} · ${session.tutor_name || `GS #${session.tutor_id}`}`;
 
@@ -466,13 +820,14 @@ function MonthSessionPill({ session, onClick }: { session: LearningSessionRespon
       onClick={onClick}
       title={title}
       aria-label={title}
+      id={`session-${session.id}`}
       className={`block w-full rounded-lg border px-2 py-1.5 text-left text-xs transition-all hover:shadow-sm ${
         isAttendanceNeeded
           ? 'border-warning-200 bg-warning-50 text-warning-900'
           : session.status === 'COMPLETED'
             ? 'border-success-100 bg-success-50 text-success-800'
             : 'border-primary-100 bg-primary-50 text-primary-800'
-      }`}
+      } ${highlighted ? 'ring-2 ring-primary-500 ring-offset-2 shadow-md' : ''}`}
     >
       <span className="block truncate font-bold">{formatSessionTime(session)}</span>
       <span className="mt-0.5 block truncate">{getSessionTitle(session)}</span>
@@ -480,7 +835,15 @@ function MonthSessionPill({ session, onClick }: { session: LearningSessionRespon
   );
 }
 
-function SessionBlock({ session, onClick }: { session: LearningSessionResponse; onClick: () => void }) {
+function SessionBlock({
+  session,
+  highlighted,
+  onClick,
+}: {
+  session: LearningSessionResponse;
+  highlighted: boolean;
+  onClick: () => void;
+}) {
   const isPast = isPastSessionDate(session.session_date);
   const isCancelled = session.status === 'CANCELLED' || session.status === 'NO_SHOW';
   const isAttendanceNeeded = isAttendanceNeededSession(session);
@@ -492,6 +855,7 @@ function SessionBlock({ session, onClick }: { session: LearningSessionResponse; 
       onClick={onClick}
       title={detailText}
       aria-label={detailText}
+      id={`session-${session.id}`}
       className={`
         group relative flex w-full cursor-pointer flex-col gap-2 rounded-xl border p-3 text-left transition-all hover:z-20 hover:shadow-lg focus:z-20 focus:outline-none focus:ring-2 focus:ring-primary-500/30
         ${isAttendanceNeeded
@@ -501,6 +865,7 @@ function SessionBlock({ session, onClick }: { session: LearningSessionResponse; 
             : isPast
               ? 'border-border-light bg-white text-text-secondary'
               : 'border-primary-200 bg-primary-50 text-primary-900 hover:border-primary-400'}
+        ${highlighted ? 'z-10 border-primary-500 bg-primary-100 shadow-lg ring-2 ring-primary-500 ring-offset-2' : ''}
       `}
     >
       <div className="flex items-start justify-between gap-2">

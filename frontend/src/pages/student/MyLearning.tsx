@@ -1,14 +1,14 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { classApi, privateRequestApi, paymentApi, scheduleApi } from '../../services/api';
+import { classApi, paymentApi, privateRequestApi, scheduleApi } from '../../services/api';
 import type { ClassRegistrationResponse, LearningSessionResponse, PaymentResponse, PrivateRequestResponse } from '../../types';
-import { PortalPage, SegmentedTabs, EmptyPanel } from '../../components/portal/PortalPage';
+import { EmptyPanel, PortalPage, SegmentedTabs } from '../../components/portal/PortalPage';
 import { getStatusBadge } from '../../components/ui/Badge';
 import { PageLoading } from '../../components/ui/Spinner';
 import Button from '../../components/ui/Button';
-
 import Avatar from '../../components/ui/Avatar';
-import { UsersIcon, CalendarIcon, CheckCircleIcon } from '../../components/ui/Icons';
+import { BookOpenIcon, CalendarIcon, CheckCircleIcon, ClockIcon, UsersIcon, WalletIcon, XIcon } from '../../components/ui/Icons';
 import QRPaymentModal from '../../components/payment/QRPaymentModal';
 import { useToast } from '../../components/ui/Toast';
 
@@ -18,40 +18,62 @@ function toCurrency(value: string | number | null | undefined) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(num);
 }
 
-type Tab = 'PRIVATE' | 'CLASS' | 'HISTORY';
+type Tab = 'ACTIVE' | 'COMPLETED';
 type SessionTypeFilter = 'ALL' | 'CLASS' | 'PRIVATE';
-type LearningHistoryFilter = 'ALL' | 'IN_PROGRESS' | 'COMPLETED' | 'NEEDS_ATTENDANCE';
+type LearningItemType = 'CLASS' | 'PRIVATE';
+type LearningAction = 'PAY' | 'SCHEDULE' | 'WAITING' | 'REJECTED' | 'NONE';
+
+interface LearningMetrics {
+  completed: number;
+  cancelledOrAbsent: number;
+  needsAttendance: number;
+  upcoming: number;
+  scheduled: number;
+  expected: number | null;
+}
+
+interface UnifiedLearningItem {
+  key: string;
+  type: LearningItemType;
+  id: number;
+  paymentTargetId: number;
+  paymentTargetType: 'PRIVATE_TUTORING_REQUEST' | 'CLASS_REGISTRATION';
+  title: string;
+  tutorName: string | null;
+  expectedSessions: number | null;
+  feePerSession: string | null;
+  status: string;
+  note: string | null;
+  modeLabel: string;
+  typeLabel: string;
+  sessions: LearningSessionResponse[];
+}
+
+const sessionTypeFilters: { value: SessionTypeFilter; label: string }[] = [
+  { value: 'ALL', label: 'Tất cả' },
+  { value: 'CLASS', label: 'Lớp nhóm' },
+  { value: 'PRIVATE', label: 'Học 1-1' },
+];
 
 export default function StudentMyLearning() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const requestedTab = searchParams.get('tab');
-  const defaultTab: Tab = requestedTab === 'CLASS' || requestedTab === 'HISTORY' ? requestedTab : 'PRIVATE';
+  const defaultTab: Tab = requestedTab === 'COMPLETED' || requestedTab === 'HISTORY' ? 'COMPLETED' : 'ACTIVE';
   const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
-
+  const [typeFilter, setTypeFilter] = useState<SessionTypeFilter>('ALL');
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const [requests, setRequests] = useState<PrivateRequestResponse[]>([]);
   const [myClasses, setMyClasses] = useState<ClassRegistrationResponse[]>([]);
   const [sessions, setSessions] = useState<LearningSessionResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [qrPayment, setQrPayment] = useState<PaymentResponse | null>(null);
-  const [payLoading, setPayLoading] = useState<string | null>(null); // "PRIVATE_123" or "CLASS_456"
+  const [payLoading, setPayLoading] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const historyCount = useMemo(() => {
-    const classIdsWithSessions = new Set(
-      sessions.filter((s) => s.class_id !== null).map((s) => s.class_id as number)
-    );
-    const reqIdsWithSessions = new Set(
-      sessions.filter((s) => s.private_request_id !== null).map((s) => s.private_request_id as number)
-    );
-    return (
-      myClasses.filter((c) => classIdsWithSessions.has(c.class_id)).length +
-      requests.filter((r) => reqIdsWithSessions.has(r.id)).length
-    );
-  }, [sessions, myClasses, requests]);
-
   const loadData = useCallback(() => {
+    setLoading(true);
     Promise.all([
       privateRequestApi.list().catch(() => []),
       classApi.myRegistrations().catch(() => []),
@@ -68,6 +90,30 @@ export default function StudentMyLearning() {
     loadData();
   }, [loadData]);
 
+  const items = useMemo(() => buildLearningItems(myClasses, requests, sessions), [myClasses, requests, sessions]);
+  const activeItems = useMemo(() => items.filter((item) => !isCompletedItem(item)), [items]);
+  const completedItems = useMemo(() => items.filter(isCompletedItem), [items]);
+
+  const filteredActiveItems = useMemo(
+    () => activeItems.filter((item) => typeFilter === 'ALL' || item.type === typeFilter),
+    [activeItems, typeFilter],
+  );
+
+  const primaryActiveItems = useMemo(
+    () => filteredActiveItems.filter((item) => !isPendingPrivateRequest(item)).sort(compareLearningItems),
+    [filteredActiveItems],
+  );
+
+  const waitingRequestItems = useMemo(
+    () => filteredActiveItems.filter(isPendingPrivateRequest).sort(compareLearningItems),
+    [filteredActiveItems],
+  );
+
+  const filteredCompletedItems = useMemo(
+    () => completedItems.filter((item) => typeFilter === 'ALL' || item.type === typeFilter).sort(compareCompletedItems),
+    [completedItems, typeFilter],
+  );
+
   const handlePayNow = async (targetType: 'PRIVATE_TUTORING_REQUEST' | 'CLASS_REGISTRATION', targetId: number) => {
     const loadingKey = `${targetType}_${targetId}`;
     setPayLoading(loadingKey);
@@ -77,7 +123,7 @@ export default function StudentMyLearning() {
         (p: PaymentResponse) =>
           p.target_type === targetType &&
           p.target_id === targetId &&
-          (p.status === 'CREATED' || p.status === 'PENDING')
+          (p.status === 'CREATED' || p.status === 'PENDING'),
       );
       if (!pending) {
         toast('warning', 'Không tìm thấy giao dịch chờ thanh toán. Vui lòng liên hệ hỗ trợ.');
@@ -86,7 +132,6 @@ export default function StudentMyLearning() {
       if (pending.provider?.toUpperCase() === 'SEPAY') {
         setQrPayment(pending);
       } else {
-        // Mock payment — navigate to payments page
         navigate('/student/payments');
       }
     } catch {
@@ -102,76 +147,51 @@ export default function StudentMyLearning() {
 
   if (loading) return <PageLoading />;
 
+  const visibleCount = activeTab === 'ACTIVE'
+    ? primaryActiveItems.length + waitingRequestItems.length
+    : filteredCompletedItems.length;
+
   return (
     <PortalPage
       title="Lớp của tôi"
-      description="Theo dõi và quản lý toàn bộ các khóa học và yêu cầu gia sư 1-1 của bạn tại đây."
+      description="Theo dõi lớp đang học, tiến trình từng buổi và các yêu cầu học 1-1 trong cùng một nơi."
     >
+      <div className="space-y-4 md:space-y-5">
+        <SegmentedTabs
+          value={activeTab}
+          onChange={setActiveTab}
+          tabs={[
+            { value: 'ACTIVE', label: 'Đang học', count: activeItems.length },
+            { value: 'COMPLETED', label: 'Đã hoàn thành', count: completedItems.length },
+          ]}
+        />
 
-      <SegmentedTabs
-        value={activeTab}
-        onChange={setActiveTab}
-        tabs={[
-          { value: 'PRIVATE', label: 'Yêu cầu 1-1', count: requests.length },
-          { value: 'CLASS', label: 'Lớp nhóm', count: myClasses.length },
-          { value: 'HISTORY', label: 'Lịch sử học', count: historyCount },
-        ]}
-      />
+        <div className="flex flex-col gap-3 rounded-lg border border-border-light bg-white px-3 py-3 shadow-xs sm:flex-row sm:items-center sm:justify-between sm:px-4">
+          <FilterButtonGroup
+            label="Loại"
+            options={sessionTypeFilters}
+            value={typeFilter}
+            onChange={setTypeFilter}
+          />
+          <span className="text-xs font-semibold text-text-tertiary">{visibleCount} kết quả</span>
+        </div>
 
-      <div className="mt-8">
-        {activeTab === 'PRIVATE' && (
-          <div className="space-y-6">
-            {requests.length === 0 ? (
-              <EmptyPanel
-                title="Chưa có yêu cầu 1-1 nào"
-                description="Bạn có thể tìm kiếm và gửi yêu cầu học kèm 1-1 cho các gia sư phù hợp với nhu cầu."
-                action={<Button onClick={() => navigate('/student')}>Khám phá Gia sư</Button>}
-              />
-            ) : (
-              <div className="grid gap-6 lg:grid-cols-2">
-                {requests.map((req) => (
-                  <PrivateRequestCard
-                    key={req.id}
-                    request={req}
-                    onAction={(path) => navigate(path)}
-                    onPayNow={() => handlePayNow('PRIVATE_TUTORING_REQUEST', req.id)}
-                    payLoading={payLoading === `PRIVATE_TUTORING_REQUEST_${req.id}`}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'CLASS' && (
-          <div className="space-y-6">
-            {myClasses.length === 0 ? (
-              <EmptyPanel
-                title="Chưa tham gia lớp nhóm"
-                description="Bạn chưa đăng ký lớp học nhóm nào. Khám phá hàng ngàn lớp học với mức phí siêu ưu đãi."
-                action={<Button onClick={() => navigate('/student')}>Tìm lớp nhóm</Button>}
-              />
-            ) : (
-              <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
-                {myClasses.map((reg) => (
-                  <ClassRegistrationCard
-                    key={reg.id}
-                    reg={reg}
-                    onAction={(path) => navigate(path)}
-                    onPayNow={() => handlePayNow('CLASS_REGISTRATION', reg.id)}
-                    payLoading={payLoading === `CLASS_REGISTRATION_${reg.id}`}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'HISTORY' && (
-          <SessionHistoryTab
-            sessions={sessions}
-            myClasses={myClasses}
-            requests={requests}
+        {activeTab === 'ACTIVE' ? (
+          <ActiveLearningView
+            primaryItems={primaryActiveItems}
+            waitingItems={waitingRequestItems}
+            expandedKey={expandedKey}
+            payLoading={payLoading}
+            onToggle={(key) => setExpandedKey(expandedKey === key ? null : key)}
+            onSchedule={(session) => navigate(session ? `/student/schedule?sessionId=${session.id}` : '/student/schedule')}
+            onPayNow={(item) => handlePayNow(item.paymentTargetType, item.paymentTargetId)}
+            onExplore={() => navigate('/student')}
+          />
+        ) : (
+          <CompletedLearningView
+            items={filteredCompletedItems}
+            expandedKey={expandedKey}
+            onToggle={(key) => setExpandedKey(expandedKey === key ? null : key)}
           />
         )}
       </div>
@@ -186,18 +206,544 @@ export default function StudentMyLearning() {
   );
 }
 
-const sessionTypeFilters: { value: SessionTypeFilter; label: string }[] = [
-  { value: 'ALL', label: 'Tất cả' },
-  { value: 'CLASS', label: 'Lớp nhóm' },
-  { value: 'PRIVATE', label: 'Học 1-1' },
-];
+function ActiveLearningView({
+  primaryItems,
+  waitingItems,
+  expandedKey,
+  payLoading,
+  onToggle,
+  onSchedule,
+  onPayNow,
+  onExplore,
+}: {
+  primaryItems: UnifiedLearningItem[];
+  waitingItems: UnifiedLearningItem[];
+  expandedKey: string | null;
+  payLoading: string | null;
+  onToggle: (key: string) => void;
+  onSchedule: (session?: LearningSessionResponse) => void;
+  onPayNow: (item: UnifiedLearningItem) => void;
+  onExplore: () => void;
+}) {
+  if (primaryItems.length === 0 && waitingItems.length === 0) {
+    return (
+      <EmptyPanel
+        title="Chưa có lớp đang học"
+        description="Các lớp nhóm, lớp 1-1 và yêu cầu đang chờ sẽ xuất hiện tại đây."
+        action={<Button onClick={onExplore}>Khám phá lớp học</Button>}
+      />
+    );
+  }
 
-const learningHistoryFilters: { value: LearningHistoryFilter; label: string }[] = [
-  { value: 'ALL', label: 'Tất cả' },
-  { value: 'IN_PROGRESS', label: 'Đang học' },
-  { value: 'COMPLETED', label: 'Hoàn thành' },
-  { value: 'NEEDS_ATTENDANCE', label: 'Chờ cập nhật điểm danh' },
-];
+  return (
+    <div className="space-y-4 md:space-y-6">
+      {primaryItems.length > 0 && (
+        <div className="grid gap-4">
+          {primaryItems.map((item) => (
+            <LearningCard
+              key={item.key}
+              item={item}
+              expanded={expandedKey === item.key}
+              payLoading={payLoading === `${item.paymentTargetType}_${item.paymentTargetId}`}
+              onToggle={() => onToggle(item.key)}
+              onSchedule={onSchedule}
+              onPayNow={() => onPayNow(item)}
+            />
+          ))}
+        </div>
+      )}
+
+      {waitingItems.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-text-primary">Yêu cầu đang chờ</h2>
+              <p className="mt-0.5 text-xs text-text-tertiary">Các yêu cầu 1-1 chưa trở thành lớp học chính thức.</p>
+            </div>
+            <span className="rounded-full bg-surface-tertiary px-2.5 py-1 text-xs font-semibold text-text-secondary">
+              {waitingItems.length}
+            </span>
+          </div>
+          <div className="grid gap-4">
+            {waitingItems.map((item) => (
+              <LearningCard
+                key={item.key}
+                item={item}
+                expanded={expandedKey === item.key}
+                payLoading={payLoading === `${item.paymentTargetType}_${item.paymentTargetId}`}
+                muted
+                onToggle={() => onToggle(item.key)}
+                onSchedule={onSchedule}
+                onPayNow={() => onPayNow(item)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function CompletedLearningView({
+  items,
+  expandedKey,
+  onToggle,
+}: {
+  items: UnifiedLearningItem[];
+  expandedKey: string | null;
+  onToggle: (key: string) => void;
+}) {
+  if (items.length === 0) {
+    return (
+      <EmptyPanel
+        title="Chưa có lớp hoàn thành"
+        description="Khi lớp đạt đủ số buổi học hoặc được đánh dấu hoàn thành, lớp sẽ chuyển sang đây."
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {items.map((item) => (
+        <LearningCard
+          key={item.key}
+          item={item}
+          expanded={expandedKey === item.key}
+          completed
+          onToggle={() => onToggle(item.key)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function LearningCard({
+  item,
+  expanded,
+  completed = false,
+  muted = false,
+  payLoading = false,
+  onToggle,
+  onSchedule,
+  onPayNow,
+}: {
+  item: UnifiedLearningItem;
+  expanded: boolean;
+  completed?: boolean;
+  muted?: boolean;
+  payLoading?: boolean;
+  onToggle: () => void;
+  onSchedule?: (session?: LearningSessionResponse) => void;
+  onPayNow?: () => void;
+}) {
+  const metrics = getItemMetrics(item);
+  const sortedSessions = getSortedSessions(item.sessions);
+  const nextSession = sortedSessions.find(isUpcomingScheduledSession);
+  const action = getLearningAction(item);
+  const progressPct = getProgressPct(metrics);
+  const showTimeline = item.sessions.length > 0;
+  const isDimmed = completed || muted || action === 'REJECTED';
+
+  return (
+    <article
+      className={`overflow-hidden rounded-lg border bg-white shadow-xs transition-all duration-200 ${
+        completed
+          ? 'border-slate-200 bg-slate-50/70'
+          : isDimmed
+            ? 'border-border-light bg-surface-secondary/60'
+            : 'border-border-light hover:border-primary-200 hover:shadow-sm'
+      }`}
+    >
+      <div className="p-3.5 md:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start gap-3">
+              <Avatar
+                name={item.tutorName || 'Gia sư'}
+                size="md"
+                className={`border border-white shadow-sm ${isDimmed ? 'opacity-75 grayscale' : ''}`}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                    item.type === 'CLASS' ? 'bg-primary-50 text-primary-700' : 'bg-sky-50 text-sky-700'
+                  }`}>
+                    {item.type === 'CLASS' ? <UsersIcon className="h-3.5 w-3.5" /> : <BookOpenIcon className="h-3.5 w-3.5" />}
+                    {item.typeLabel}
+                  </span>
+                  {completed ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-success-50 px-2.5 py-1 text-xs font-semibold text-success-700">
+                      <CheckCircleIcon className="h-3.5 w-3.5" />
+                      Hoàn thành
+                    </span>
+                  ) : (
+                    getStatusBadge(item.status)
+                  )}
+                </div>
+                <h3 className={`mt-2 line-clamp-2 text-lg font-semibold tracking-tight ${completed ? 'text-text-secondary' : 'text-text-primary'}`}>
+                  {item.title}
+                </h3>
+                <p className="mt-1 text-sm text-text-secondary">
+                  {item.tutorName ? `GS. ${item.tutorName}` : 'Chưa có gia sư'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <LearningCardAction
+            item={item}
+            action={action}
+            payLoading={payLoading}
+            onSchedule={() => onSchedule?.(nextSession ?? undefined)}
+            onPayNow={onPayNow}
+          />
+        </div>
+
+        <div className="mt-4 space-y-3 md:mt-5">
+          <div className="rounded-lg border border-border-light bg-surface-secondary/70 p-3.5 md:p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-text-primary">Tiến trình học</p>
+              <p className="text-sm font-bold text-primary-700">
+                {metrics.expected ? `${metrics.completed}/${metrics.expected} buổi` : `${metrics.completed} buổi đã học`}
+                {progressPct !== null && <span className="ml-2 text-text-tertiary">({progressPct}%)</span>}
+              </p>
+            </div>
+            <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white">
+              <div
+                className={`h-full rounded-full transition-all ${completed ? 'bg-success-500' : 'bg-primary-500'}`}
+                style={{ width: `${progressPct ?? (metrics.completed > 0 ? 100 : 0)}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <MetaChip icon={<BookOpenIcon className="h-4 w-4" />} label={item.typeLabel} />
+            <MetaChip icon={<ClockIcon className="h-4 w-4" />} label={item.modeLabel} />
+            {item.feePerSession && (
+              <MetaChip icon={<WalletIcon className="h-4 w-4" />} label={`${toCurrency(item.feePerSession)}/buổi`} />
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 rounded-lg border border-border-light bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+          <div className="flex items-start gap-2 text-sm">
+            <CalendarIcon className={`mt-0.5 h-4 w-4 shrink-0 ${nextSession ? 'text-primary-600' : 'text-text-tertiary'}`} />
+            <div>
+              <p className="font-semibold text-text-primary">
+                {nextSession
+                  ? `Buổi tiếp: ${formatShortDate(nextSession.session_date)} lúc ${nextSession.start_time.slice(0, 5)}`
+                  : getNoNextSessionText(item)}
+              </p>
+              {item.note && (
+                <p className={`mt-1 text-xs ${action === 'REJECTED' ? 'text-danger-600' : 'text-text-tertiary'}`}>
+                  {item.note}
+                </p>
+              )}
+              {metrics.needsAttendance > 0 && (
+                <p className="mt-1 text-xs font-semibold text-warning-600">
+                  {metrics.needsAttendance} buổi chờ gia sư cập nhật điểm danh
+                </p>
+              )}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onToggle}
+            className="inline-flex w-full shrink-0 items-center justify-center rounded-lg border border-border-light px-3 py-2 text-xs font-semibold text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+            disabled={!showTimeline}
+            aria-expanded={expanded}
+          >
+            {showTimeline ? (expanded ? 'Ẩn buổi học' : 'Xem buổi học') : 'Chưa có buổi'}
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-border-light bg-surface-secondary/50 px-4 py-4 md:px-5">
+          <div className="mb-4 flex flex-wrap gap-2">
+            <StatPill label="Đã học" value={metrics.completed} tone="success" />
+            <StatPill label="Sắp tới" value={metrics.upcoming} tone="default" />
+            {metrics.cancelledOrAbsent > 0 && (
+              <StatPill label="Hủy/Vắng" value={metrics.cancelledOrAbsent} tone="muted" />
+            )}
+          </div>
+          <ol className="space-y-2">
+            {sortedSessions.map((session, idx) => (
+              <SessionTimelineRow key={session.id} session={session} index={idx + 1} />
+            ))}
+          </ol>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function LearningCardAction({
+  item,
+  action,
+  payLoading,
+  onSchedule,
+  onPayNow,
+}: {
+  item: UnifiedLearningItem;
+  action: LearningAction;
+  payLoading: boolean;
+  onSchedule?: () => void;
+  onPayNow?: () => void;
+}) {
+  if (action === 'PAY') {
+    return (
+      <Button
+        className="w-full shrink-0 gap-2 bg-primary-700 text-white hover:bg-primary-800 lg:w-auto"
+        onClick={onPayNow}
+        disabled={payLoading}
+      >
+        {payLoading ? (
+          'Đang tải...'
+        ) : (
+          <>
+            <WalletIcon className="h-4 w-4" />
+            Thanh toán
+          </>
+        )}
+      </Button>
+    );
+  }
+
+  if (action === 'SCHEDULE') {
+    return (
+      <Button
+        variant="secondary"
+        className="w-full shrink-0 gap-2 border border-primary-100 lg:w-auto"
+        onClick={onSchedule}
+      >
+        <CalendarIcon className="h-4 w-4" />
+        Vào lịch học
+      </Button>
+    );
+  }
+
+  if (action === 'REJECTED') {
+    return (
+      <Button variant="outline" className="w-full shrink-0 gap-2 text-danger-600 lg:w-auto" disabled>
+        <XIcon className="h-4 w-4" />
+        Đã bị từ chối
+      </Button>
+    );
+  }
+
+  if (action === 'WAITING') {
+    return (
+      <Button variant="outline" className="w-full shrink-0 gap-2 text-text-tertiary lg:w-auto" disabled>
+        <ClockIcon className="h-4 w-4" />
+        {item.status === 'PENDING' ? 'Chờ duyệt' : 'Chờ phản hồi'}
+      </Button>
+    );
+  }
+
+  return null;
+}
+
+function MetaChip({ icon, label }: { icon: ReactNode; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-lg bg-surface-secondary px-2.5 py-1.5 text-xs font-semibold text-text-secondary">
+      {icon}
+      {label}
+    </span>
+  );
+}
+
+function FilterButtonGroup<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="shrink-0 text-xs font-bold uppercase tracking-[0.14em] text-text-tertiary">{label}:</span>
+      <div className="flex flex-wrap gap-1 rounded-lg border border-border-light bg-surface-secondary p-1">
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+              value === option.value
+                ? 'bg-white text-primary-700 shadow-xs'
+                : 'text-text-secondary hover:bg-white/70 hover:text-text-primary'
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function buildLearningItems(
+  myClasses: ClassRegistrationResponse[],
+  requests: PrivateRequestResponse[],
+  sessions: LearningSessionResponse[],
+): UnifiedLearningItem[] {
+  const sessionsByClass = new Map<number, LearningSessionResponse[]>();
+  const sessionsByRequest = new Map<number, LearningSessionResponse[]>();
+
+  sessions.forEach((session) => {
+    if (session.class_id !== null) {
+      const existing = sessionsByClass.get(session.class_id) ?? [];
+      existing.push(session);
+      sessionsByClass.set(session.class_id, existing);
+    }
+    if (session.private_request_id !== null) {
+      const existing = sessionsByRequest.get(session.private_request_id) ?? [];
+      existing.push(session);
+      sessionsByRequest.set(session.private_request_id, existing);
+    }
+  });
+
+  const classItems: UnifiedLearningItem[] = myClasses.map((reg) => ({
+    key: `CLASS_${reg.id}`,
+    type: 'CLASS',
+    id: reg.class_id,
+    paymentTargetId: reg.id,
+    paymentTargetType: 'CLASS_REGISTRATION',
+    title: reg.class_title || reg.subject_name || `Lớp #${reg.class_id}`,
+    tutorName: reg.tutor_name ?? null,
+    expectedSessions: reg.total_sessions ?? null,
+    feePerSession: reg.fee_per_session_per_student ?? null,
+    status: reg.status,
+    note: reg.review_note,
+    modeLabel: 'Theo lịch lớp',
+    typeLabel: 'Lớp nhóm',
+    sessions: sessionsByClass.get(reg.class_id) ?? [],
+  }));
+
+  const privateItems: UnifiedLearningItem[] = requests.map((request) => ({
+    key: `PRIVATE_${request.id}`,
+    type: 'PRIVATE',
+    id: request.id,
+    paymentTargetId: request.id,
+    paymentTargetType: 'PRIVATE_TUTORING_REQUEST',
+    title: request.subject_name ? `${request.subject_name} - ${request.grade_level}` : `Yêu cầu 1-1 #${request.id}`,
+    tutorName: request.tutor_name,
+    expectedSessions: request.requested_sessions,
+    feePerSession: request.agreed_fee_per_session,
+    status: request.status,
+    note: request.tutor_response_note,
+    modeLabel: formatModeLabel(request.mode),
+    typeLabel: 'Học 1-1',
+    sessions: sessionsByRequest.get(request.id) ?? [],
+  }));
+
+  return [...classItems, ...privateItems];
+}
+
+function getLearningAction(item: UnifiedLearningItem): LearningAction {
+  if (item.status === 'TUTOR_CONFIRMED' || item.status === 'APPROVED') return 'PAY';
+  if (item.status === 'PAID' || item.status === 'ONGOING') return 'SCHEDULE';
+  if (item.status === 'SENT' || item.status === 'PENDING') return 'WAITING';
+  if (item.status === 'TUTOR_REJECTED' || item.status === 'REJECTED') return 'REJECTED';
+  return 'NONE';
+}
+
+function isPendingPrivateRequest(item: UnifiedLearningItem) {
+  return item.type === 'PRIVATE' && (item.status === 'SENT' || item.status === 'TUTOR_REJECTED');
+}
+
+function isCompletedItem(item: UnifiedLearningItem) {
+  const metrics = getItemMetrics(item);
+  if (item.status === 'COMPLETED') return true;
+  return metrics.expected !== null && metrics.expected > 0 && metrics.completed >= metrics.expected;
+}
+
+function compareLearningItems(a: UnifiedLearningItem, b: UnifiedLearningItem) {
+  const aNext = getNextSessionTime(a);
+  const bNext = getNextSessionTime(b);
+  if (aNext !== bNext) {
+    if (aNext === Number.POSITIVE_INFINITY) return 1;
+    if (bNext === Number.POSITIVE_INFINITY) return -1;
+    return aNext - bNext;
+  }
+
+  const aWeight = getSortWeight(a);
+  const bWeight = getSortWeight(b);
+  if (aWeight !== bWeight) return aWeight - bWeight;
+  return a.title.localeCompare(b.title, 'vi');
+}
+
+function compareCompletedItems(a: UnifiedLearningItem, b: UnifiedLearningItem) {
+  return getLatestSessionTime(b.sessions) - getLatestSessionTime(a.sessions);
+}
+
+function getSortWeight(item: UnifiedLearningItem) {
+  const action = getLearningAction(item);
+  if (action === 'PAY') return 1;
+  if (action === 'SCHEDULE') return 2;
+  if (action === 'WAITING') return 3;
+  if (action === 'REJECTED') return 4;
+  return 5;
+}
+
+function getNextSessionTime(item: UnifiedLearningItem) {
+  const next = getSortedSessions(item.sessions).find(isUpcomingScheduledSession);
+  return next ? getSessionDateTime(next).getTime() : Number.POSITIVE_INFINITY;
+}
+
+function getLatestSessionTime(sessions: LearningSessionResponse[]) {
+  return sessions.reduce((latest, session) => Math.max(latest, getSessionDateTime(session).getTime()), 0);
+}
+
+function getItemMetrics(item: UnifiedLearningItem): LearningMetrics {
+  let completed = 0;
+  let cancelledOrAbsent = 0;
+  let needsAttendance = 0;
+  let upcoming = 0;
+
+  item.sessions.forEach((session) => {
+    if (session.status === 'COMPLETED') completed += 1;
+    if (session.status === 'CANCELLED' || session.status === 'NO_SHOW') cancelledOrAbsent += 1;
+    if (isAttendanceNeededSession(session)) needsAttendance += 1;
+    if (isUpcomingScheduledSession(session)) upcoming += 1;
+  });
+
+  return {
+    completed,
+    cancelledOrAbsent,
+    needsAttendance,
+    upcoming,
+    scheduled: item.sessions.length,
+    expected: item.expectedSessions,
+  };
+}
+
+function getProgressPct(metrics: LearningMetrics) {
+  if (!metrics.expected || metrics.expected <= 0) return null;
+  return Math.min(100, Math.round((metrics.completed / metrics.expected) * 100));
+}
+
+function getNoNextSessionText(item: UnifiedLearningItem) {
+  if (item.status === 'SENT') return 'Đã gửi yêu cầu, chờ gia sư phản hồi';
+  if (item.status === 'TUTOR_REJECTED') return 'Gia sư đã từ chối yêu cầu';
+  if (item.status === 'PENDING') return 'Đang chờ staff duyệt đăng ký';
+  if (item.status === 'APPROVED' || item.status === 'TUTOR_CONFIRMED') return 'Lịch học sẽ hiển thị sau khi thanh toán';
+  if (item.status === 'COMPLETED') return 'Lớp học đã hoàn thành';
+  return item.sessions.length > 0 ? 'Chưa có buổi học sắp tới' : 'Chưa có lịch học';
+}
+
+function formatModeLabel(mode: string | null | undefined) {
+  if (mode === 'ONLINE') return 'Trực tuyến';
+  if (mode === 'OFFLINE') return 'Trực tiếp';
+  if (mode === 'BOTH') return 'Linh hoạt';
+  return 'Theo thỏa thuận';
+}
 
 function getSessionDate(sessionDate: string) {
   return new Date(`${sessionDate}T00:00:00`);
@@ -221,337 +767,16 @@ function isAttendanceNeededSession(session: LearningSessionResponse) {
   return session.status === 'SCHEDULED' && isPastSessionDate(session.session_date);
 }
 
-interface LearningHistoryItem {
-  key: string;
-  id: number;
-  type: 'CLASS' | 'PRIVATE';
-  title: string;
-  tutorName: string | null;
-  expectedSessions: number | null;
-  sourceStatus: string;
-  sessions: LearningSessionResponse[];
-}
-
-function SessionHistoryTab({
-  sessions,
-  myClasses,
-  requests,
-}: {
-  sessions: LearningSessionResponse[];
-  myClasses: ClassRegistrationResponse[];
-  requests: PrivateRequestResponse[];
-}) {
-  const [typeFilter, setTypeFilter] = useState<SessionTypeFilter>('ALL');
-  const [historyFilter, setHistoryFilter] = useState<LearningHistoryFilter>('ALL');
-  const [expandedKey, setExpandedKey] = useState<string | null>(null);
-
-  const historyItems = useMemo(() => {
-    const sessionsByClass = new Map<number, LearningSessionResponse[]>();
-    const sessionsByRequest = new Map<number, LearningSessionResponse[]>();
-
-    sessions.forEach((session) => {
-      if (session.class_id !== null) {
-        const existing = sessionsByClass.get(session.class_id) ?? [];
-        existing.push(session);
-        sessionsByClass.set(session.class_id, existing);
-      }
-      if (session.private_request_id !== null) {
-        const existing = sessionsByRequest.get(session.private_request_id) ?? [];
-        existing.push(session);
-        sessionsByRequest.set(session.private_request_id, existing);
-      }
-    });
-
-    const classItems: LearningHistoryItem[] = myClasses.map((reg) => ({
-      key: `CLASS_${reg.class_id}`,
-      id: reg.class_id,
-      type: 'CLASS',
-      title: reg.class_title || `Lớp #${reg.class_id}`,
-      tutorName: reg.tutor_name ?? null,
-      expectedSessions: reg.total_sessions ?? null,
-      sourceStatus: reg.status,
-      sessions: sessionsByClass.get(reg.class_id) ?? [],
-    }));
-
-    const requestItems: LearningHistoryItem[] = requests.map((request) => ({
-      key: `PRIVATE_${request.id}`,
-      id: request.id,
-      type: 'PRIVATE',
-      title: request.subject_name ? `${request.subject_name} - ${request.grade_level}` : `Yêu cầu 1-1 #${request.id}`,
-      tutorName: request.tutor_name,
-      expectedSessions: request.requested_sessions,
-      sourceStatus: request.status,
-      sessions: sessionsByRequest.get(request.id) ?? [],
-    }));
-
-    return [...classItems, ...requestItems].sort((a, b) => {
-      const aLatest = getLatestSessionTime(a.sessions);
-      const bLatest = getLatestSessionTime(b.sessions);
-      if (aLatest !== bLatest) return bLatest - aLatest;
-      return a.title.localeCompare(b.title, 'vi');
-    });
-  }, [myClasses, requests, sessions]);
-
-  const filteredItems = useMemo(() => {
-    return historyItems.filter((item) => {
-      if (item.sessions.length === 0) return false;
-      if (typeFilter !== 'ALL' && item.type !== typeFilter) return false;
-      if (historyFilter === 'IN_PROGRESS') return item.sessions.some(isUpcomingScheduledSession);
-      if (historyFilter === 'NEEDS_ATTENDANCE') return item.sessions.some(isAttendanceNeededSession);
-      if (historyFilter === 'COMPLETED') {
-        const completedCount = item.sessions.filter((s) => s.status === 'COMPLETED').length;
-        if (item.expectedSessions != null) {
-          return item.expectedSessions > 0 && completedCount >= item.expectedSessions;
-        }
-        return ['COMPLETED', 'PAID'].includes(item.sourceStatus) && completedCount > 0;
-      }
-      return true;
-    });
-  }, [historyFilter, historyItems, typeFilter]);
-
-  if (historyItems.filter((i) => i.sessions.length > 0).length === 0) {
-    return (
-      <EmptyPanel
-        title="Chưa có lịch sử học"
-        description="Các lớp nhóm và yêu cầu học 1-1 có buổi học sẽ xuất hiện ở đây."
-      />
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Filter bar — compact single row */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-border-light bg-white px-4 py-3 shadow-sm">
-        <FilterButtonGroup
-          label="Loại"
-          options={sessionTypeFilters}
-          value={typeFilter}
-          onChange={setTypeFilter}
-        />
-        <div className="h-4 w-px bg-border-light hidden sm:block" />
-        <FilterButtonGroup
-          label="Tiến độ"
-          options={learningHistoryFilters}
-          value={historyFilter}
-          onChange={setHistoryFilter}
-        />
-        <span className="ml-auto text-xs font-semibold text-text-tertiary">
-          {filteredItems.length} kết quả
-        </span>
-      </div>
-
-      {filteredItems.length === 0 ? (
-        <EmptyPanel title="Không có kết quả phù hợp" />
-      ) : (
-        <div className="space-y-3">
-          {filteredItems.map((item) => (
-            <LearningHistoryAccordion
-              key={item.key}
-              item={item}
-              expanded={expandedKey === item.key}
-              onToggle={() => setExpandedKey(expandedKey === item.key ? null : item.key)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function FilterButtonGroup<T extends string,>({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  options: { value: T; label: string }[];
-  value: T;
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="shrink-0 text-xs font-bold uppercase tracking-[0.14em] text-text-tertiary">{label}:</span>
-      <div className="flex flex-wrap gap-1 rounded-xl border border-border-light bg-surface-secondary p-1">
-        {options.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            className={`rounded-lg px-3 py-1 text-xs font-bold transition-colors ${
-              value === option.value
-                ? 'bg-white text-primary-700 shadow-sm'
-                : 'text-text-secondary hover:bg-white/70 hover:text-text-primary'
-            }`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function getLatestSessionTime(sessions: LearningSessionResponse[]) {
-  return sessions.reduce((latest, session) => Math.max(latest, getSessionDateTime(session).getTime()), 0);
-}
-
 function getSortedSessions(sessions: LearningSessionResponse[]) {
   return sessions.slice().sort((a, b) => getSessionDateTime(a).getTime() - getSessionDateTime(b).getTime());
 }
 
-function getHistoryItemMetrics(item: LearningHistoryItem) {
-  let completed = 0;
-  let cancelledOrAbsent = 0;
-  let needsAttendance = 0;
-  let upcoming = 0;
-
-  item.sessions.forEach((session) => {
-    if (session.status === 'COMPLETED') completed += 1;
-    if (session.status === 'CANCELLED' || session.status === 'NO_SHOW') cancelledOrAbsent += 1;
-    if (isAttendanceNeededSession(session)) needsAttendance += 1;
-    if (isUpcomingScheduledSession(session)) upcoming += 1;
+function formatShortDate(dateStr: string) {
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString('vi-VN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'numeric',
   });
-
-  return { completed, cancelledOrAbsent, needsAttendance, upcoming, scheduled: item.sessions.length, expected: item.expectedSessions };
-}
-
-// ── Accordion row: summary + inline expand ────────────────
-function LearningHistoryAccordion({
-  item,
-  expanded,
-  onToggle,
-}: {
-  item: LearningHistoryItem;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  const metrics = getHistoryItemMetrics(item);
-  const sortedSessions = getSortedSessions(item.sessions);
-  const nextSession = sortedSessions.find(isUpcomingScheduledSession);
-  const lastCompleted = [...sortedSessions].reverse().find((s) => s.status === 'COMPLETED');
-  const typeLabel = item.type === 'CLASS' ? 'Lớp nhóm' : 'Học 1-1';
-  const progressPct = item.expectedSessions
-    ? Math.min(100, Math.round((metrics.completed / item.expectedSessions) * 100))
-    : null;
-
-  const isCompleted = item.expectedSessions != null
-    ? (item.expectedSessions > 0 && metrics.completed >= item.expectedSessions)
-    : (['COMPLETED', 'PAID'].includes(item.sourceStatus) && metrics.completed > 0);
-
-  return (
-    <div className={`overflow-hidden rounded-2xl border transition-all ${
-      isCompleted
-        ? `bg-slate-50/60 border-slate-200/80 ${expanded ? 'border-slate-300' : 'hover:border-slate-300'}`
-        : `bg-white border-border-light ${expanded ? 'border-primary-200' : 'hover:border-primary-100'}`
-    }`}>
-      {/* ── Header row (always visible) ── */}
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full text-left"
-        aria-expanded={expanded}
-      >
-        <div className="flex items-center gap-4 px-5 py-4">
-          {/* Left: icon + type pill */}
-          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-            isCompleted ? 'bg-blue-100/70' : 'bg-primary-50'
-          }`}>
-            {isCompleted ? (
-              <CheckCircleIcon className="h-5 w-5 text-blue-600" />
-            ) : item.type === 'CLASS' ? (
-              <UsersIcon className="h-5 w-5 text-primary-600" />
-            ) : (
-              <CalendarIcon className="h-5 w-5 text-primary-600" />
-            )}
-          </div>
-
-          {/* Center: title + meta */}
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                isCompleted ? 'bg-slate-200/70 text-slate-600' : 'bg-primary-50 text-primary-600'
-              }`}>
-                {typeLabel}
-              </span>
-              {isCompleted ? (
-                <span className="inline-flex items-center gap-0.5 rounded-full bg-blue-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-800">
-                  ✓ Hoàn thành
-                </span>
-              ) : (
-                getStatusBadge(item.sourceStatus)
-              )}
-            </div>
-            <p className={`mt-1 truncate text-base font-bold ${isCompleted ? 'text-text-secondary' : 'text-text-primary'}`}>{item.title}</p>
-            <p className="mt-0.5 text-sm text-text-secondary">
-              {item.tutorName || 'Chưa có gia sư'}
-              {item.expectedSessions ? ` · ${metrics.completed}/${item.expectedSessions} buổi` : ` · ${metrics.completed} buổi đã học`}
-              {nextSession && (
-                <span className="ml-2 text-primary-600 font-semibold">
-                  · Tiếp: {formatShortDate(nextSession.session_date)} {nextSession.start_time.slice(0, 5)}
-                </span>
-              )}
-            </p>
-          </div>
-
-          {/* Right: progress + chevron */}
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            {progressPct !== null && (
-              <div className="flex items-center gap-2">
-                <div className="h-1.5 w-20 overflow-hidden rounded-full bg-surface-secondary">
-                  <div
-                    className={`h-full rounded-full transition-all ${
-                      isCompleted ? 'bg-blue-500' : 'bg-primary-500'
-                    }`}
-                    style={{ width: `${progressPct}%` }}
-                  />
-                </div>
-                <span className={`text-xs font-bold ${isCompleted ? 'text-blue-600' : 'text-text-tertiary'}`}>{progressPct}%</span>
-              </div>
-            )}
-            {metrics.needsAttendance > 0 && (
-              <span className="rounded-full bg-warning-50 px-2 py-0.5 text-[10px] font-bold text-warning-700">
-                ⏳ {metrics.needsAttendance} chờ GS cập nhật
-              </span>
-            )}
-            <span className={`text-xs text-text-tertiary transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}>
-              ▾
-            </span>
-          </div>
-        </div>
-      </button>
-
-      {/* ── Expandable session timeline ── */}
-      {expanded && (
-        <div className="border-t border-border-light bg-surface-secondary/40 px-5 py-4">
-          {/* Quick stats strip */}
-          <div className="mb-4 flex flex-wrap gap-3">
-            <StatPill label="Đã học" value={metrics.completed} tone="success" />
-            <StatPill label="Sắp tới" value={metrics.upcoming} tone="default" />
-            {metrics.cancelledOrAbsent > 0 && (
-              <StatPill label="Hủy/Vắng" value={metrics.cancelledOrAbsent} tone="muted" />
-            )}
-            {lastCompleted && (
-              <span className="ml-auto text-xs text-text-tertiary">
-                Buổi gần nhất: {formatShortDate(lastCompleted.session_date)}
-              </span>
-            )}
-          </div>
-
-          {/* Session timeline */}
-          {sortedSessions.length === 0 ? (
-            <p className="text-sm text-text-tertiary">Chưa có buổi học nào được tạo.</p>
-          ) : (
-            <ol className="space-y-2">
-              {sortedSessions.map((session, idx) => (
-                <SessionTimelineRow key={session.id} session={session} index={idx + 1} />
-              ))}
-            </ol>
-          )}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function StatPill({ label, value, tone }: { label: string; value: number; tone: 'success' | 'default' | 'muted' }) {
@@ -561,8 +786,8 @@ function StatPill({ label, value, tone }: { label: string; value: number; tone: 
       ? 'bg-surface-secondary text-text-tertiary'
       : 'bg-white border border-border-light text-text-primary';
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${cls}`}>
-      <span className="text-sm font-extrabold">{value}</span>
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${cls}`}>
+      <span className="text-sm font-bold">{value}</span>
       {label}
     </span>
   );
@@ -576,28 +801,26 @@ function SessionTimelineRow({ session, index }: { session: LearningSessionRespon
     : session.status === 'CANCELLED' || session.status === 'NO_SHOW'
       ? 'bg-text-tertiary'
       : needsUpdate
-        ? 'bg-warning-400'
-        : 'bg-primary-400';
+        ? 'bg-warning-500'
+        : 'bg-primary-500';
 
   return (
     <li className="flex items-start gap-3">
-      {/* Timeline dot */}
       <div className="mt-1.5 flex flex-col items-center">
         <div className={`h-2.5 w-2.5 rounded-full ${dotColor}`} />
       </div>
 
-      {/* Content */}
-      <div className="flex flex-1 flex-wrap items-start justify-between gap-x-4 gap-y-1 rounded-xl border border-border-light bg-white px-3 py-2.5">
+      <div className="flex flex-1 flex-wrap items-start justify-between gap-x-4 gap-y-1 rounded-lg border border-border-light bg-white px-3 py-2.5">
         <div>
           <p className="text-sm font-semibold text-text-primary">
-            Buổi {session.session_number ?? index} &nbsp;·&nbsp; {formatShortDate(session.session_date)}
-            &nbsp;<span className="font-normal text-text-secondary">{session.start_time.slice(0, 5)}–{session.end_time.slice(0, 5)}</span>
+            Buổi {session.session_number ?? index} · {formatShortDate(session.session_date)}
+            <span className="font-normal text-text-secondary"> {session.start_time.slice(0, 5)}-{session.end_time.slice(0, 5)}</span>
           </p>
           {needsUpdate && (
-            <p className="mt-0.5 text-xs text-warning-600">⏳ Gia sư chưa cập nhật điểm danh</p>
+            <p className="mt-0.5 text-xs text-warning-600">Gia sư chưa cập nhật điểm danh</p>
           )}
           {session.attendance_note && (
-            <p className="mt-0.5 text-xs text-text-tertiary italic">"{session.attendance_note}"</p>
+            <p className="mt-0.5 text-xs italic text-text-tertiary">"{session.attendance_note}"</p>
           )}
         </div>
         <SessionHistoryStatusBadge session={session} />
@@ -606,223 +829,14 @@ function SessionTimelineRow({ session, index }: { session: LearningSessionRespon
   );
 }
 
-function formatShortDate(dateStr: string) {
-  return new Date(`${dateStr}T00:00:00`).toLocaleDateString('vi-VN', {
-    weekday: 'short', day: 'numeric', month: 'numeric',
-  });
-}
-
-
-
 function SessionHistoryStatusBadge({ session }: { session: LearningSessionResponse }) {
   if (isAttendanceNeededSession(session)) {
     return (
       <span className="inline-flex items-center rounded-full bg-warning-50 px-2.5 py-0.5 text-xs font-medium text-warning-700">
-        ⚠️ Chưa điểm danh
+        Chưa điểm danh
       </span>
     );
   }
 
   return getStatusBadge(session.status);
 }
-
-function PrivateRequestCard({
-  request,
-  onAction,
-  onPayNow,
-  payLoading,
-}: {
-  request: PrivateRequestResponse;
-  onAction: (path: string) => void;
-  onPayNow: () => void;
-  payLoading: boolean;
-}) {
-  const isPaid = request.status === 'PAID';
-  const isConfirmed = request.status === 'TUTOR_CONFIRMED';
-  const isRejected = request.status === 'TUTOR_REJECTED';
-
-  // Progress Steps logic
-  const steps = [
-    { label: 'Gửi yêu cầu', active: true, done: true },
-    { label: 'GS Phản hồi', active: isConfirmed || isPaid || isRejected, done: isConfirmed || isPaid },
-    { label: 'Học phí', active: isPaid, done: isPaid }
-  ];
-
-  return (
-    <article className="relative flex flex-col overflow-hidden rounded-2xl border border-border-light bg-white shadow-sm transition-all hover:shadow-md">
-      {/* Background decoration */}
-      <div className="absolute top-0 right-0 w-32 h-32 bg-primary-50 rounded-bl-full opacity-50 pointer-events-none"></div>
-
-      <div className="p-6 relative z-10 flex flex-col h-full">
-        <div className="flex justify-between items-start mb-5">
-          <div className="flex gap-4 items-center">
-            <Avatar name={request.tutor_name || `Gia sư #${request.tutor_id}`} size="lg" className="border-2 border-white shadow-sm" />
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-primary-600 mb-0.5">Gia sư 1-1</p>
-              <h3 className="font-bold text-lg text-text-primary leading-tight">{request.tutor_name || `Gia sư #${request.tutor_id}`}</h3>
-            </div>
-          </div>
-          <div className="shrink-0">{getStatusBadge(request.status)}</div>
-        </div>
-
-        <div className="bg-surface-secondary/70 rounded-xl p-5 border border-border-light backdrop-blur-sm mb-6 flex-1">
-          <h4 className="font-bold text-lg text-text-primary mb-3">
-            {request.subject_name ? `${request.subject_name} - ${request.grade_level}` : `Yêu cầu #${request.id}`}
-          </h4>
-          
-          <div className="space-y-2.5">
-            <p className="text-sm font-medium text-text-secondary flex items-center gap-2">
-              <CalendarIcon className="w-4 h-4 text-text-tertiary" />
-              {request.requested_sessions} buổi học ({request.mode === 'ONLINE' ? 'Trực tuyến' : request.mode === 'OFFLINE' ? 'Trực tiếp' : 'Cả hai'})
-            </p>
-            {request.agreed_fee_per_session && (
-              <div className="pt-2 mt-2 border-t border-border-light/50 flex items-center justify-between">
-                <p className="text-sm font-bold text-text-primary flex items-center gap-2">
-                  <span className="w-4 text-center text-primary-500">💰</span>
-                  {toCurrency(request.agreed_fee_per_session)} <span className="font-normal text-xs text-text-tertiary">/ buổi</span>
-                </p>
-                <div className="text-right">
-                  <p className="text-[10px] uppercase text-text-tertiary font-bold mb-0.5">Tổng cộng</p>
-                  <p className="text-sm font-extrabold text-primary-700">
-                    {toCurrency(Number(request.agreed_fee_per_session) * (request.requested_sessions || 0))}
-                  </p>
-                </div>
-              </div>
-            )}
-            {request.tutor_response_note && (
-              <div className="mt-3 bg-white/60 p-3 rounded-lg border border-border-light border-dashed">
-                <p className="text-xs font-bold text-text-secondary mb-1">Gia sư nhắn:</p>
-                <p className="text-sm italic text-text-primary">"{request.tutor_response_note}"</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Action area */}
-        <div className="mt-auto space-y-5">
-          {/* Progress Indicator */}
-          {!isRejected && (
-            <div className="flex items-center justify-between relative px-2">
-              <div className="absolute top-1/2 left-4 right-4 h-0.5 bg-surface-tertiary -translate-y-1/2 z-0"></div>
-              {steps.map((step, idx) => (
-                <div key={idx} className="relative z-10 flex flex-col items-center gap-1.5 bg-white px-2">
-                  <div className={`w-5 h-5 rounded-full flex items-center justify-center border-2 ${
-                    step.done ? 'bg-primary-50 border-primary-500 text-primary-600' :
-                    step.active ? 'bg-white border-primary-400 text-primary-500' :
-                    'bg-white border-border-light text-border-light'
-                  }`}>
-                    {step.done ? <CheckCircleIcon className="w-3.5 h-3.5" /> : <span className="w-1.5 h-1.5 rounded-full bg-current"></span>}
-                  </div>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider ${step.active ? 'text-text-primary' : 'text-text-tertiary'}`}>
-                    {step.label}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          
-          <div className="flex gap-2">
-            {isConfirmed ? (
-              <Button className="flex-1 justify-center shadow-sm" onClick={onPayNow} disabled={payLoading}>
-                {payLoading ? 'Đang tải...' : 'Thanh toán'}
-              </Button>
-            ) : isPaid ? (
-              <Button className="flex-1 justify-center border-primary-200 text-primary-700 bg-primary-50 hover:bg-primary-100" onClick={() => onAction('/student/schedule')}>
-                Vào lịch học
-              </Button>
-            ) : (
-              <Button variant="outline" className="flex-1 justify-center bg-surface-secondary text-text-tertiary border-border-light cursor-not-allowed" disabled>
-                {isRejected ? 'Bị từ chối' : 'Chờ duyệt'}
-              </Button>
-            )}
-          </div>
-
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function ClassRegistrationCard({
-  reg,
-  onAction,
-  onPayNow,
-  payLoading,
-}: {
-  reg: ClassRegistrationResponse;
-  onAction: (path: string) => void;
-  onPayNow: () => void;
-  payLoading: boolean;
-}) {
-  const isPaid = reg.status === 'PAID';
-  const isApproved = reg.status === 'APPROVED';
-  const isPending = reg.status === 'PENDING';
-  const isRejected = reg.status === 'REJECTED';
-
-  return (
-    <article className="group relative flex flex-col rounded-2xl border border-border-light bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:border-primary-200 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-primary-50/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-      
-      <div className="p-6 relative z-10 flex flex-col h-full">
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-600 mb-1">Lớp nhóm</p>
-            <h4 className="text-lg font-bold leading-snug text-text-primary line-clamp-2 group-hover:text-primary-700 transition-colors">{reg.class_title}</h4>
-          </div>
-          <div className="shrink-0">{getStatusBadge(reg.status)}</div>
-        </div>
-        
-        <div className="space-y-2 mt-auto mb-6 bg-surface-secondary/50 rounded-xl p-4 border border-border-light/50 backdrop-blur-sm flex-1">
-          {reg.tutor_name && (
-            <p className="text-sm font-medium text-text-secondary flex items-center gap-2">
-              <UsersIcon className="w-4 h-4 text-primary-500" />
-              GS. <span className="font-bold text-text-primary">{reg.tutor_name}</span>
-            </p>
-          )}
-          <p className="text-sm font-medium text-text-secondary flex items-center gap-2">
-            <CalendarIcon className="w-4 h-4 text-primary-500" />
-            {reg.total_sessions} buổi
-          </p>
-          {reg.fee_per_session_per_student && (
-            <div className="pt-2 mt-2 border-t border-border-light/50 flex items-center justify-between">
-               <p className="text-base font-bold text-primary-700">
-                 {toCurrency(reg.fee_per_session_per_student)} <span className="text-xs text-text-tertiary font-normal">/ buổi</span>
-               </p>
-               <div className="text-right">
-                 <p className="text-[10px] uppercase text-text-tertiary font-bold mb-0.5">Tổng cộng</p>
-                 <p className="text-base font-extrabold text-primary-700">
-                   {toCurrency(Number(reg.fee_per_session_per_student) * (reg.total_sessions || 0))}
-                 </p>
-               </div>
-            </div>
-          )}
-          {reg.review_note && (
-            <div className="mt-3 bg-white/60 p-3 rounded-lg border border-border-light border-dashed">
-              <p className="text-xs font-bold text-text-secondary mb-1">Nhận xét từ Staff:</p>
-              <p className="text-sm italic text-text-primary">"{reg.review_note}"</p>
-            </div>
-          )}
-        </div>
-
-        <div className="flex gap-2 mt-4">
-          {isApproved ? (
-            <Button className="flex-1 justify-center shadow-sm" onClick={onPayNow} disabled={payLoading}>
-              {payLoading ? 'Đang tải...' : 'Thanh toán'}
-            </Button>
-          ) : isPaid ? (
-            <Button className="flex-1 justify-center border-primary-200 text-primary-700 bg-primary-50 hover:bg-primary-100" onClick={() => onAction('/student/schedule')}>
-              Vào lịch học
-            </Button>
-          ) : (
-            <Button variant="outline" className="flex-1 justify-center bg-surface-secondary text-text-tertiary border-border-light cursor-not-allowed" disabled>
-              {isPending ? 'Đang chờ duyệt' : isRejected ? 'Bị từ chối' : 'Trạng thái khác'}
-            </Button>
-          )}
-        </div>
-      </div>
-    </article>
-  );
-}
-
-

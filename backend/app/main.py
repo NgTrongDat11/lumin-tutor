@@ -21,6 +21,7 @@ from app.api.v1.storage import router as storage_router
 from app.api.v1.chat import router as chat_router
 from app.api.v1.admin import router as admin_router
 from app.api.v1.webhooks import router as webhooks_router
+from app.api.v1.notifications import router as notifications_router
 from app.core.config import settings
 
 app = FastAPI(
@@ -55,6 +56,7 @@ app.include_router(schedules_router, prefix=API_V1)
 app.include_router(admin_router, prefix=API_V1)
 app.include_router(chat_router, prefix=API_V1)
 app.include_router(storage_router, prefix=API_V1)
+app.include_router(notifications_router, prefix=API_V1)
 
 # Serve uploaded files locally
 os.makedirs("uploads", exist_ok=True)

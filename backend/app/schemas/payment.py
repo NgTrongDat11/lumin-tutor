@@ -21,6 +21,7 @@ class PaymentResponse(BaseModel):
     status: str
     provider: str | None = None
     paid_at: datetime | None
+    created_at: datetime
     refund_amount: Decimal | None
     refund_reason: str | None
     transfer_content: str | None = None

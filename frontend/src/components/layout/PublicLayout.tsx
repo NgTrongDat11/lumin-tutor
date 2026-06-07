@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, Link } from 'react-router-dom';
 import authHero from '../../assets/auth-hero.png';
 
 export default function PublicLayout() {
@@ -13,12 +13,12 @@ export default function PublicLayout() {
         />
         <div className="absolute inset-0 bg-primary-950/50" />
         <div className="relative z-10 flex flex-col justify-between p-12 text-white">
-          <div className="flex items-center gap-2.5">
+          <Link to="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
             <div className="w-9 h-9 bg-white/15 rounded-lg flex items-center justify-center border border-white/10">
               <span className="text-sm font-bold">L</span>
             </div>
             <span className="text-xl font-bold tracking-tight">Lumin</span>
-          </div>
+          </Link>
 
           <div>
             <h1 className="text-4xl font-bold leading-[1.15] tracking-tight max-w-lg">
@@ -51,12 +51,12 @@ export default function PublicLayout() {
       {/* Right — form */}
       <div className="flex-1 flex items-center justify-center p-6 sm:p-12 bg-surface-secondary">
         <div className="w-full max-w-md animate-fade-in">
-          <div className="lg:hidden flex items-center gap-2.5 mb-8">
+          <Link to="/" className="lg:hidden flex items-center gap-2.5 mb-8 hover:opacity-80 transition-opacity">
             <div className="w-9 h-9 bg-primary-950 rounded-lg flex items-center justify-center">
               <span className="text-sm font-bold text-white">L</span>
             </div>
             <span className="text-xl font-bold tracking-tight text-text-primary">Lumin</span>
-          </div>
+          </Link>
           <Outlet />
         </div>
       </div>

@@ -14,7 +14,9 @@ from app.models.private_tutoring_request import PrivateTutoringRequest
 from app.models.schedule_block import ScheduleBlock
 from app.models.schedule_pattern import SchedulePattern
 from app.models.teaching_contract import TeachingContract
+from app.models.tutor_profile import TutorProfile
 from app.models.user_account import UserAccount
+from app.api.v1.notifications import create_notification, create_notifications_bulk
 from app.schemas.common import ApiResponse
 from app.schemas.schedule import (
     LearningSessionResponse,
@@ -69,6 +71,21 @@ async def create_schedule_pattern(
         end_time=body.end_time,
     )
     db.add(block)
+
+    # ── Tạo notification cho student(s) + tutor ──────────
+    notify_user_ids = await _resolve_session_user_ids(body, tutor_id, db)
+    if sessions:
+        first = sessions[0]
+        await create_notifications_bulk(
+            db,
+            user_ids=notify_user_ids,
+            notification_type="SESSION_REMINDER",
+            title=f"Lịch học mới: {len(sessions)} buổi đã được tạo",
+            body=f"Buổi đầu tiên vào ngày {first.session_date.strftime('%d/%m/%Y')}, "
+                 f"{first.start_time.strftime('%H:%M')} - {first.end_time.strftime('%H:%M')}.",
+            reference_type="learning_session",
+            reference_id=first.id if hasattr(first, 'id') and first.id else None,
+        )
 
     await db.commit()
     await db.refresh(pattern)
@@ -276,8 +293,25 @@ async def update_attendance(
     if body.status not in ("COMPLETED", "CANCELLED", "NO_SHOW"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Status phải là COMPLETED, CANCELLED hoặc NO_SHOW.")
 
+    old_status = session.status
     session.status = body.status
     session.attendance_note = body.attendance_note
+
+    # ── Tạo notification khi hủy buổi học ────────────────
+    if body.status == "CANCELLED" and old_status != "CANCELLED":
+        notify_ids = await _resolve_session_notify_ids(session, db)
+        session_label = f"Buổi {session.session_number or ''} ngày {session.session_date.strftime('%d/%m/%Y')}"
+        await create_notifications_bulk(
+            db,
+            user_ids=notify_ids,
+            notification_type="SESSION_CANCELLED",
+            title=f"Buổi học đã bị hủy",
+            body=f"{session_label} ({session.start_time.strftime('%H:%M')} - {session.end_time.strftime('%H:%M')}) đã bị hủy."
+                 + (f" Lý do: {body.attendance_note}" if body.attendance_note else ""),
+            reference_type="learning_session",
+            reference_id=session.id,
+        )
+
     await db.commit()
     await db.refresh(session)
     return ApiResponse(
@@ -434,6 +468,74 @@ async def list_schedule_blocks(
 
 
 # ── Helpers ──────────────────────────────────────────────
+
+
+async def _resolve_session_user_ids(
+    body: SchedulePatternCreate, tutor_id: int, db: AsyncSession
+) -> list[int]:
+    """Lấy danh sách user_id (student + tutor account_id) cần nhận notification."""
+    user_ids: list[int] = []
+
+    # Tutor account_id
+    tp_result = await db.execute(
+        select(TutorProfile.account_id).where(TutorProfile.id == tutor_id)
+    )
+    tutor_account_id = tp_result.scalar_one_or_none()
+    if tutor_account_id:
+        user_ids.append(tutor_account_id)
+
+    # Student(s)
+    if body.private_request_id:
+        req_result = await db.execute(
+            select(PrivateTutoringRequest.student_account_id)
+            .where(PrivateTutoringRequest.id == body.private_request_id)
+        )
+        student_id = req_result.scalar_one_or_none()
+        if student_id:
+            user_ids.append(student_id)
+    elif body.class_id:
+        reg_result = await db.execute(
+            select(ClassRegistration.student_account_id)
+            .where(ClassRegistration.class_id == body.class_id)
+        )
+        for row in reg_result.scalars().all():
+            user_ids.append(row)
+
+    return list(set(user_ids))
+
+
+async def _resolve_session_notify_ids(
+    session: LearningSession, db: AsyncSession
+) -> list[int]:
+    """Lấy danh sách user_id cần nhận notification cho 1 session cụ thể."""
+    user_ids: list[int] = []
+
+    # Tutor
+    tp_result = await db.execute(
+        select(TutorProfile.account_id).where(TutorProfile.id == session.tutor_id)
+    )
+    tutor_account_id = tp_result.scalar_one_or_none()
+    if tutor_account_id:
+        user_ids.append(tutor_account_id)
+
+    # Student(s)
+    if session.private_request_id:
+        req_result = await db.execute(
+            select(PrivateTutoringRequest.student_account_id)
+            .where(PrivateTutoringRequest.id == session.private_request_id)
+        )
+        student_id = req_result.scalar_one_or_none()
+        if student_id:
+            user_ids.append(student_id)
+    elif session.class_id:
+        reg_result = await db.execute(
+            select(ClassRegistration.student_account_id)
+            .where(ClassRegistration.class_id == session.class_id)
+        )
+        for row in reg_result.scalars().all():
+            user_ids.append(row)
+
+    return list(set(user_ids))
 
 
 async def _resolve_tutor_id(body: SchedulePatternCreate, db: AsyncSession) -> int:

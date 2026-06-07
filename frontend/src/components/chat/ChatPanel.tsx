@@ -132,7 +132,7 @@ export default function ChatPanel({ onClose }: ChatPanelProps) {
 
   return (
     <section
-      className="fixed bottom-[92px] right-4 z-[1001] flex h-[min(550px,calc(100vh-116px))] w-[calc(100vw-32px)] max-w-[400px] animate-slide-up flex-col overflow-hidden rounded-lg border border-border bg-[#fbfaf6] shadow-xl md:right-6"
+      className="fixed bottom-[10.25rem] right-3 z-[55] flex h-[min(500px,calc(100dvh-12rem))] w-[calc(100vw-24px)] max-w-[400px] animate-slide-up flex-col overflow-hidden rounded-lg border border-border bg-[#fbfaf6] shadow-xl md:bottom-[92px] md:right-6 md:h-[min(550px,calc(100vh-116px))] md:w-[calc(100vw-32px)]"
       aria-label="Lumin AI chat"
     >
       <header className="flex items-center justify-between border-b border-border-light bg-white px-4 py-3">

@@ -24,3 +24,4 @@ from app.models.message_thread import MessageThread  # noqa: F401
 from app.models.message_thread_participant import MessageThreadParticipant  # noqa: F401
 from app.models.message import Message  # noqa: F401
 from app.models.audit_log import AuditLog  # noqa: F401
+from app.models.notification import Notification  # noqa: F401

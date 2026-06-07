@@ -30,7 +30,7 @@ export default function LoginPage() {
     try {
       const me = await login(email, password);
       toast('success', 'Đăng nhập thành công!');
-      navigate(roleDashboard[me.user.role]);
+      navigate(roleDashboard[me.user.role], { replace: true });
     } catch (err: unknown) {
       setError(extractErrorMessage(err));
     } finally {

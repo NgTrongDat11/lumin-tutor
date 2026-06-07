@@ -21,9 +21,9 @@ interface PortalPageProps {
 
 export function PortalPage({ title, description, actions, children, className = '' }: PortalPageProps) {
   return (
-    <div className={`mx-auto max-w-7xl animate-slide-up space-y-6 ${className}`}>
-      <div className="rounded-lg border border-border-light bg-white px-5 py-5 shadow-xs md:px-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    <div className={`mx-auto max-w-7xl animate-slide-up space-y-5 ${className}`}>
+      <div className="px-1 py-1">
+        <div className="flex flex-col gap-4 border-b border-border-light pb-5 md:flex-row md:items-end md:justify-between">
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold tracking-tight text-text-primary md:text-3xl">{title}</h1>
             {description && <p className="mt-2 max-w-3xl text-sm leading-6 text-text-secondary">{description}</p>}
@@ -48,6 +48,7 @@ interface MetricTileProps {
 export function MetricTile({ label, value, hint, icon: Icon, tone = 'primary', href }: MetricTileProps) {
   const content = (
     <div className="h-full rounded-lg border border-border-light bg-white p-4 shadow-xs transition-all duration-200 hover:border-primary-200 hover:shadow-sm">
+      <div className={`mb-4 h-1.5 w-12 rounded-full border ${toneClasses[tone]}`} />
       <div className="flex items-start justify-between gap-3">
         <div className={`flex h-10 w-10 items-center justify-center rounded-lg border ${toneClasses[tone]}`}>
           <Icon className="h-5 w-5" />
