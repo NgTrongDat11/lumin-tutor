@@ -44,12 +44,22 @@ const timeSlotOptions = [
   { value: 'AFTERNOON', label: 'Chiều' },
   { value: 'EVENING', label: 'Tối' },
 ];
+const PAGE_SIZE = 9;
 
 type ResultTab = 'ALL' | 'CLASS' | 'TUTOR' | 'RECOMMENDATION';
+type ModeFilter = 'ALL' | 'ONLINE' | 'OFFLINE';
 type DetailTarget =
   | { type: 'CLASS'; data: CourseClassResponse }
   | { type: 'TUTOR'; data: RecommendedTutor }
   | null;
+
+function createEmptyLearningNeedForm(): LearningNeedCreate {
+  return {
+    preferred_mode: 'BOTH',
+    preferred_learning_type: 'BOTH',
+    schedules: [],
+  };
+}
 
 function toCurrency(value: string | number | null | undefined) {
   const amount = typeof value === 'number' ? value : Number(value || 0);
@@ -59,6 +69,17 @@ function toCurrency(value: string | number | null | undefined) {
 function includesQuery(values: Array<string | null | undefined>, query: string) {
   if (!query) return true;
   return values.filter(Boolean).join(' ').toLowerCase().includes(query);
+}
+
+function matchesMode(value: string | null | undefined, filter: ModeFilter) {
+  if (filter === 'ALL') return true;
+  return value === filter || value === 'BOTH';
+}
+
+function getClassModeLabel(course: CourseClassResponse) {
+  if (course.mode === 'ONLINE') return 'Trực tuyến';
+  if (course.mode === 'OFFLINE') return course.location || 'Trực tiếp';
+  return course.location ? `Linh hoạt · ${course.location}` : 'Linh hoạt';
 }
 
 export default function StudentDashboard() {
@@ -72,18 +93,26 @@ export default function StudentDashboard() {
   const [activeNeed, setActiveNeed] = useState<LearningNeedResponse | null>(null);
   
   const [searchQuery, setSearchQuery] = useState('');
+  const [modeFilter, setModeFilter] = useState<ModeFilter>('ALL');
+  const [subjectFilter, setSubjectFilter] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<ResultTab>('ALL');
+  const [classPage, setClassPage] = useState(1);
+  const [tutorPage, setTutorPage] = useState(1);
   const [detailTarget, setDetailTarget] = useState<DetailTarget>(null);
   const [loading, setLoading] = useState(true);
+  const [recLoading, setRecLoading] = useState(false);
   const [showSmartMatch, setShowSmartMatch] = useState(false);
   const [tutorForRequest, setTutorForRequest] = useState<RecommendedTutor | null>(null);
 
   const fetchRecommendation = async (needId: number) => {
+    setRecLoading(true);
     try {
       const rec = await recommendationApi.forNeed(needId);
       setRecommendation(rec);
     } catch {
       toast('error', 'Không thể tải kết quả Smart Match.');
+    } finally {
+      setRecLoading(false);
     }
   };
 
@@ -118,41 +147,61 @@ export default function StudentDashboard() {
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const recommendedTutors = useMemo(() => recommendation?.recommended_tutors ?? [], [recommendation]);
+  const visibleSubjectFilters = useMemo(() => subjects.slice(0, 6), [subjects]);
 
   const classResults = useMemo(() => {
     return classes
-      .filter((course) => includesQuery([
-        course.title,
-        course.grade_level,
-        course.goal,
-        course.location,
-        course.mode,
-        String(course.fee_per_session_per_student),
-      ], normalizedQuery))
+      .filter((course) => {
+        if (!includesQuery([
+          course.title,
+          course.grade_level,
+          course.goal,
+          course.location,
+          course.mode,
+          String(course.fee_per_session_per_student),
+        ], normalizedQuery)) return false;
+        if (!matchesMode(course.mode, modeFilter)) return false;
+        if (subjectFilter && course.subject_id !== subjectFilter) return false;
+        return true;
+      })
       .sort((a, b) => {
         if (a.status === 'ENROLLING' && b.status !== 'ENROLLING') return -1;
         if (a.status !== 'ENROLLING' && b.status === 'ENROLLING') return 1;
         return a.title.localeCompare(b.title);
       });
-  }, [classes, normalizedQuery]);
+  }, [classes, normalizedQuery, modeFilter, subjectFilter]);
 
   const tutorResults = useMemo(() => {
     const dataSource = activeTab === 'RECOMMENDATION'
       ? recommendedTutors
       : browseTutors.map(tutor => ({ tutor, score: '0', reasons: [] } as RecommendedTutor));
 
-    return dataSource.filter((rec) => includesQuery([
-      rec.tutor.full_name,
-      rec.tutor.bio,
-      rec.tutor.qualification_level,
-      rec.tutor.teaching_area,
-      ...rec.tutor.subjects.flatMap((subject) => [subject.subject_name, subject.grade_level]),
-    ], normalizedQuery));
-  }, [recommendedTutors, browseTutors, activeTab, normalizedQuery]);
+    return dataSource.filter((rec) => {
+      if (!includesQuery([
+        rec.tutor.full_name,
+        rec.tutor.bio,
+        rec.tutor.qualification_level,
+        rec.tutor.teaching_area,
+        ...rec.tutor.subjects.flatMap((subject) => [subject.subject_name, subject.grade_level]),
+      ], normalizedQuery)) return false;
+      if (!matchesMode(rec.tutor.teaching_mode, modeFilter)) return false;
+      if (subjectFilter && !rec.tutor.subjects.some((subject) => subject.subject_id === subjectFilter)) return false;
+      return true;
+    });
+  }, [recommendedTutors, browseTutors, activeTab, normalizedQuery, modeFilter, subjectFilter]);
+
+  useEffect(() => {
+    setClassPage(1);
+    setTutorPage(1);
+  }, [normalizedQuery, modeFilter, subjectFilter, activeTab]);
 
   const visibleClasses = activeTab === 'ALL' || activeTab === 'CLASS' ? classResults : [];
   const visibleTutors = (activeTab === 'ALL' || activeTab === 'TUTOR' || activeTab === 'RECOMMENDATION') ? tutorResults : [];
-  const hasResults = visibleClasses.length > 0 || visibleTutors.length > 0;
+  const pagedClasses = visibleClasses.slice(0, classPage * PAGE_SIZE);
+  const pagedTutors = visibleTutors.slice(0, tutorPage * PAGE_SIZE);
+  const hasMoreClasses = visibleClasses.length > pagedClasses.length;
+  const hasMoreTutors = visibleTutors.length > pagedTutors.length;
+  const hasResults = visibleClasses.length > 0 || visibleTutors.length > 0 || (activeTab === 'RECOMMENDATION' && recLoading);
 
   if (loading) return <PageLoading />;
 
@@ -210,6 +259,49 @@ export default function StudentDashboard() {
             </button>
           )}
         </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-bold uppercase tracking-wide text-text-tertiary">Lọc</span>
+          {(['ALL', 'ONLINE', 'OFFLINE'] as ModeFilter[]).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setModeFilter(mode)}
+              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
+                modeFilter === mode
+                  ? 'border-primary-600 bg-primary-600 text-white'
+                  : 'border-border bg-white text-text-secondary hover:border-primary-300 hover:text-text-primary'
+              }`}
+            >
+              {mode === 'ALL' ? 'Tất cả' : mode === 'ONLINE' ? 'Online' : 'Trực tiếp'}
+            </button>
+          ))}
+          {visibleSubjectFilters.map((subject) => (
+            <button
+              key={subject.id}
+              type="button"
+              onClick={() => setSubjectFilter((current) => current === subject.id ? null : subject.id)}
+              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
+                subjectFilter === subject.id
+                  ? 'border-primary-400 bg-primary-50 text-primary-700'
+                  : 'border-border bg-white text-text-secondary hover:border-primary-300 hover:text-text-primary'
+              }`}
+            >
+              {subject.name}
+            </button>
+          ))}
+          {(modeFilter !== 'ALL' || subjectFilter !== null) && (
+            <button
+              type="button"
+              onClick={() => {
+                setModeFilter('ALL');
+                setSubjectFilter(null);
+              }}
+              className="px-2 text-xs font-bold text-danger-500 hover:text-danger-700"
+            >
+              Xóa lọc
+            </button>
+          )}
+        </div>
       </section>
 
       {/* Tabs */}
@@ -252,7 +344,12 @@ export default function StudentDashboard() {
       </section>
 
       {/* Results */}
-      {!hasResults ? (
+      {activeTab === 'RECOMMENDATION' && recLoading ? (
+        <Card padding="lg" className="text-center bg-transparent py-16">
+          <div className="mx-auto mb-4 h-12 w-12 rounded-full border-4 border-primary-200 border-t-primary-600 animate-spin" />
+          <p className="text-sm font-semibold text-text-secondary">AI đang phân tích nhu cầu của bạn...</p>
+        </Card>
+      ) : !hasResults ? (
         <Card padding="lg" className="border-dashed border-2 text-center bg-transparent py-16">
           <div className="mx-auto w-16 h-16 rounded-full bg-surface-secondary flex items-center justify-center mb-4">
             <SearchIcon className="h-8 w-8 text-text-tertiary" />
@@ -270,11 +367,28 @@ export default function StudentDashboard() {
                 <h3 className="text-xl font-bold text-text-primary">Lớp học nhóm ({visibleClasses.length})</h3>
               </div>
               <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3 stagger-grid">
-                {visibleClasses.map((course) => (
+                {pagedClasses.map((course) => (
                   <ClassCard key={course.id} course={course} onOpen={() => setDetailTarget({ type: 'CLASS', data: course })} />
                 ))}
               </div>
+              {hasMoreClasses && (
+                <div className="mt-6 text-center">
+                  <Button variant="outline" className="px-8" onClick={() => setClassPage((page) => page + 1)}>
+                    Xem thêm {visibleClasses.length - pagedClasses.length} lớp học
+                  </Button>
+                </div>
+              )}
             </section>
+          )}
+
+          {visibleClasses.length > 0 && visibleTutors.length > 0 && activeTab === 'ALL' && (
+            <div className="relative flex items-center py-2">
+              <div className="flex-1 border-t border-border-light" />
+              <span className="bg-surface-primary px-4 text-xs font-bold uppercase tracking-widest text-text-tertiary">
+                Gia sư phù hợp
+              </span>
+              <div className="flex-1 border-t border-border-light" />
+            </div>
           )}
 
           {visibleTutors.length > 0 && (
@@ -285,10 +399,17 @@ export default function StudentDashboard() {
                 </h3>
               </div>
               <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3 stagger-grid">
-                {visibleTutors.map((rec) => (
+                {pagedTutors.map((rec) => (
                   <TutorCard key={rec.tutor.id} rec={rec} isRecommendation={activeTab === 'RECOMMENDATION'} onOpen={() => setDetailTarget({ type: 'TUTOR', data: rec })} />
                 ))}
               </div>
+              {hasMoreTutors && (
+                <div className="mt-6 text-center">
+                  <Button variant="outline" className="px-8" onClick={() => setTutorPage((page) => page + 1)}>
+                    Xem thêm {visibleTutors.length - pagedTutors.length} gia sư
+                  </Button>
+                </div>
+              )}
             </section>
           )}
         </div>
@@ -347,29 +468,55 @@ export default function StudentDashboard() {
 }
 
 function ClassCard({ course, onOpen }: { course: CourseClassResponse; onOpen: () => void }) {
+  const modeLabel = getClassModeLabel(course);
+
   return (
-    <article className="flex h-full flex-col rounded-xl border border-border bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:border-primary-200 cursor-pointer" onClick={onOpen}>
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-600 mb-1">Lớp nhóm</p>
-          <h4 className="text-lg font-bold leading-snug text-text-primary line-clamp-2">{course.title}</h4>
+    <article className="group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-xl border border-border bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-primary-200 hover:shadow-lg" onClick={onOpen}>
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary-50/50 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+      <div className="relative z-10 flex h-full flex-col">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-primary-600">
+              Lớp nhóm · {course.grade_level}
+            </p>
+            <h4 className="line-clamp-2 text-lg font-bold leading-snug text-text-primary transition-colors group-hover:text-primary-800">
+              {course.title}
+            </h4>
+          </div>
+          <div className="shrink-0">{getStatusBadge(course.status)}</div>
         </div>
-        <div className="shrink-0">{getStatusBadge(course.status)}</div>
-      </div>
-      
-      <div className="space-y-2 mt-auto">
-        {course.tutor_name && (
-          <p className="text-sm font-medium text-text-secondary flex items-center gap-2">
-            <UsersIcon className="w-4 h-4 text-text-tertiary" />
-            GV: <span className="font-bold text-text-primary">{course.tutor_name}</span>
+
+        {course.goal && (
+          <p className="mb-4 line-clamp-2 text-xs leading-relaxed text-text-secondary">
+            {course.goal}
           </p>
         )}
-        <p className="text-sm font-medium text-text-secondary flex items-center gap-2">
-          <CalendarIcon className="w-4 h-4 text-text-tertiary" />
-          {course.total_sessions} buổi · {course.mode === 'ONLINE' ? 'Trực tuyến' : 'Trực tiếp'}
-        </p>
-        <p className="text-base font-bold text-primary-700 mt-2">
-          {toCurrency(course.fee_per_session_per_student)} <span className="text-xs text-text-tertiary font-normal">/ buổi</span>
+
+        <div className="mt-auto space-y-2 rounded-xl border border-border-light bg-surface-secondary/70 p-4">
+          {course.tutor_name && (
+            <p className="flex items-center gap-2 text-sm font-medium text-text-secondary">
+              <UsersIcon className="h-4 w-4 shrink-0 text-primary-500" />
+              <span>GV:</span>
+              <span className="truncate font-bold text-text-primary">{course.tutor_name}</span>
+            </p>
+          )}
+          <p className="flex items-center gap-2 text-sm font-medium text-text-secondary">
+            <CalendarIcon className="h-4 w-4 shrink-0 text-primary-500" />
+            <span>{course.total_sessions} buổi · {modeLabel}</span>
+          </p>
+          <div className="mt-2 flex items-center justify-between gap-3 border-t border-border-light/70 pt-2">
+            <p className="text-base font-extrabold text-primary-700">
+              {toCurrency(course.fee_per_session_per_student)}
+              <span className="text-xs font-normal text-text-tertiary"> / buổi</span>
+            </p>
+            <p className="shrink-0 text-xs text-text-tertiary">
+              {course.min_students}-{course.max_students} học viên
+            </p>
+          </div>
+        </div>
+
+        <p className="mt-3 text-center text-xs text-text-tertiary opacity-0 transition-opacity group-hover:opacity-100">
+          Bấm để xem chi tiết
         </p>
       </div>
     </article>
@@ -377,7 +524,11 @@ function ClassCard({ course, onOpen }: { course: CourseClassResponse; onOpen: ()
 }
 
 function TutorCard({ rec, isRecommendation, onOpen }: { rec: RecommendedTutor; isRecommendation?: boolean; onOpen: () => void }) {
-  const firstSubject = rec.tutor.subjects[0];
+  const lowestFee = rec.tutor.subjects.reduce<number | null>((lowest, subject) => {
+    const fee = Number(subject.fee_per_session);
+    if (!Number.isFinite(fee)) return lowest;
+    return lowest === null ? fee : Math.min(lowest, fee);
+  }, null);
 
   return (
     <article className="flex h-full flex-col rounded-xl border border-border bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:border-primary-200 cursor-pointer" onClick={onOpen}>
@@ -403,15 +554,26 @@ function TutorCard({ rec, isRecommendation, onOpen }: { rec: RecommendedTutor; i
       </p>
 
       <div className="mt-auto space-y-3">
-        {firstSubject && (
+        {rec.tutor.subjects.length > 0 && (
           <div className="rounded-xl bg-surface-secondary p-3">
-            <p className="text-xs font-bold text-text-tertiary uppercase mb-1">Môn dạy chính</p>
-            <p className="text-sm font-bold text-text-primary truncate">
-              {firstSubject.subject_name || 'Môn học'} · {firstSubject.grade_level}
-            </p>
-            <p className="text-sm font-medium text-primary-700 mt-0.5">
-              {toCurrency(firstSubject.fee_per_session)} <span className="text-xs font-normal text-text-tertiary">/ buổi</span>
-            </p>
+            <p className="mb-2 text-xs font-bold uppercase text-text-tertiary">Môn dạy</p>
+            <div className="flex flex-wrap gap-1.5">
+              {rec.tutor.subjects.map((subject) => (
+                <span
+                  key={subject.id}
+                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-primary-100 bg-primary-50 px-2.5 py-1 text-xs font-semibold text-primary-700"
+                >
+                  <span className="truncate">{subject.subject_name || 'Môn học'}</span>
+                  <span className="shrink-0 font-normal text-primary-400">· {subject.grade_level}</span>
+                </span>
+              ))}
+            </div>
+            {lowestFee !== null && (
+              <p className="mt-2 text-sm font-bold text-primary-700">
+                Từ {toCurrency(lowestFee)}
+                <span className="text-xs font-normal text-text-tertiary"> / buổi</span>
+              </p>
+            )}
           </div>
         )}
         
@@ -618,14 +780,21 @@ function CreateNeedModal({
   toast: (type: 'success' | 'error', msg: string) => void;
 }) {
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState<LearningNeedCreate>({
-    preferred_mode: 'BOTH',
-    preferred_learning_type: 'BOTH',
-    schedules: [],
-  });
+  const [form, setForm] = useState<LearningNeedCreate>(() => createEmptyLearningNeedForm());
+
+  useEffect(() => {
+    if (open) {
+      setForm(createEmptyLearningNeedForm());
+    }
+  }, [open]);
 
   const updateField = (field: string, value: unknown) => {
     setForm((f) => ({ ...f, [field]: value }));
+  };
+
+  const handleClose = () => {
+    setForm(createEmptyLearningNeedForm());
+    onClose();
   };
 
   const addSchedule = () => {
@@ -667,12 +836,12 @@ function CreateNeedModal({
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={handleClose}
       title="Khởi tạo Cấu hình Smart Match"
       size="lg"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>Huỷ bỏ</Button>
+          <Button variant="ghost" onClick={handleClose}>Huỷ bỏ</Button>
           <Button loading={loading} onClick={(e) => handleSubmit(e as unknown as React.FormEvent)}>✨ Phân tích & Nhận gợi ý</Button>
         </>
       }
