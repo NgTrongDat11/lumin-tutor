@@ -4,7 +4,6 @@ import type { PaymentResponse, PaymentStatus } from '../../types';
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
 import { CheckCircleIcon, ClockIcon } from '../ui/Icons';
-import { useToast } from '../ui/Toast';
 
 interface QRPaymentModalProps {
   open: boolean;
@@ -27,7 +26,6 @@ function formatRemaining(seconds: number) {
 export default function QRPaymentModal({ open, payment, onClose, onPaid }: QRPaymentModalProps) {
   const [status, setStatus] = useState<PaymentStatus | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
-  const { toast } = useToast();
 
   const isSucceeded = status === 'SUCCEEDED';
 
