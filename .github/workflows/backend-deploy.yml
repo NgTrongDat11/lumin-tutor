@@ -1,0 +1,45 @@
+name: Deploy Backend to VPS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-deploy.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            echo "Starting deployment..."
+            
+            # Go to backend directory
+            cd /var/www/lumin-backend
+            
+            # Pull latest changes from main branch
+            git fetch --all
+            git reset --hard origin/main
+            
+            # Activate virtual environment and install dependencies
+            cd backend
+            source venv/bin/activate
+            pip install -r requirements.txt
+            
+            # Run database migrations (bypass asyncpg issue with statement_cache_size if needed, but usually app env handles it)
+            # PYTHONPATH=. alembic upgrade head
+            
+            # Restart the backend service
+            sudo systemctl restart lumin-backend
+            
+            # Check status
+            sudo systemctl is-active lumin-backend
+            
+            echo "Deployment successful!"
