@@ -1,0 +1,498 @@
+"""Schedule, session, and contract management API."""
+
+from datetime import date, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.deps import get_current_user, get_db, require_role
+from app.models.class_registration import ClassRegistration
+from app.models.course_class import CourseClass
+from app.models.learning_session import LearningSession
+from app.models.private_tutoring_request import PrivateTutoringRequest
+from app.models.schedule_block import ScheduleBlock
+from app.models.schedule_pattern import SchedulePattern
+from app.models.teaching_contract import TeachingContract
+from app.models.user_account import UserAccount
+from app.schemas.common import ApiResponse
+from app.schemas.schedule import (
+    LearningSessionResponse,
+    SchedulePatternCreate,
+    SchedulePatternResponse,
+    SessionAttendanceUpdate,
+    TeachingContractCreate,
+    TeachingContractResponse,
+)
+
+router = APIRouter(tags=["Schedule & Contracts"])
+
+
+# ── Schedule Patterns ────────────────────────────────────
+
+
+@router.post(
+    "/schedules",
+    response_model=ApiResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Tạo lịch học lặp lại + sinh buổi học + khóa lịch",
+)
+async def create_schedule_pattern(
+    body: SchedulePatternCreate,
+    current_user: UserAccount = Depends(require_role("STAFF", "SUPER_ADMIN")),
+    db: AsyncSession = Depends(get_db),
+):
+    # Validate XOR
+    if not body.private_request_id and not body.class_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cần chỉ định private_request_id hoặc class_id.")
+    if body.private_request_id and body.class_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Chỉ được chọn 1 trong 2.")
+
+    pattern = SchedulePattern(**body.model_dump())
+    db.add(pattern)
+    await db.flush()
+
+    # ── Auto-generate sessions ───────────────────────────
+    tutor_id = await _resolve_tutor_id(body, db)
+    sessions = _generate_sessions(body, tutor_id, pattern)
+
+    for sess in sessions:
+        db.add(sess)
+
+    # ── Auto-create schedule block ───────────────────────
+    block = ScheduleBlock(
+        tutor_id=tutor_id,
+        private_request_id=body.private_request_id,
+        class_id=body.class_id,
+        day_of_week=body.day_of_week,
+        start_time=body.start_time,
+        end_time=body.end_time,
+    )
+    db.add(block)
+
+    await db.commit()
+    await db.refresh(pattern)
+    return ApiResponse(
+        data={
+            "pattern": SchedulePatternResponse.model_validate(pattern).model_dump(),
+            "sessions_created": len(sessions),
+        },
+        message=f"Tạo lịch thành công, đã sinh {len(sessions)} buổi học.",
+    )
+
+
+@router.get(
+    "/schedules",
+    response_model=ApiResponse,
+    summary="Danh sách lịch học",
+)
+async def list_schedules(
+    private_request_id: int | None = None,
+    class_id: int | None = None,
+    current_user: UserAccount = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if current_user.role not in ("STAFF", "SUPER_ADMIN"):
+        if not private_request_id and not class_id:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Cần lọc theo request hoặc class.")
+
+        if current_user.role == "TUTOR" and not current_user.tutor_profile:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Không có hồ sơ gia sư.")
+
+        if private_request_id:
+            req_result = await db.execute(
+                select(PrivateTutoringRequest).where(PrivateTutoringRequest.id == private_request_id)
+            )
+            req = req_result.scalar_one_or_none()
+            if not req:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Không tìm thấy yêu cầu 1-1.")
+            if current_user.role == "STUDENT" and req.student_account_id != current_user.id:
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Bạn không có quyền truy cập.")
+            if current_user.role == "TUTOR" and req.tutor_id != current_user.tutor_profile.id:
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Bạn không có quyền truy cập.")
+
+        if class_id:
+            class_result = await db.execute(select(CourseClass).where(CourseClass.id == class_id))
+            course_class = class_result.scalar_one_or_none()
+            if not course_class:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Không tìm thấy lớp học.")
+            if current_user.role == "STUDENT":
+                reg_result = await db.execute(
+                    select(ClassRegistration).where(
+                        ClassRegistration.class_id == class_id,
+                        ClassRegistration.student_account_id == current_user.id,
+                    )
+                )
+                if not reg_result.scalar_one_or_none():
+                    raise HTTPException(status.HTTP_403_FORBIDDEN, "Bạn không có quyền truy cập.")
+            elif current_user.role == "TUTOR":
+                if course_class.primary_tutor_id != current_user.tutor_profile.id:
+                    raise HTTPException(status.HTTP_403_FORBIDDEN, "Bạn không có quyền truy cập.")
+
+    query = select(SchedulePattern)
+    if private_request_id:
+        query = query.where(SchedulePattern.private_request_id == private_request_id)
+    if class_id:
+        query = query.where(SchedulePattern.class_id == class_id)
+    result = await db.execute(query)
+    patterns = result.scalars().all()
+    return ApiResponse(data=[SchedulePatternResponse.model_validate(p) for p in patterns])
+
+
+# ── Learning Sessions ────────────────────────────────────
+
+
+@router.get("/sessions", response_model=ApiResponse, summary="Danh sách buổi học")
+async def list_sessions(
+    private_request_id: int | None = None,
+    class_id: int | None = None,
+    current_user: UserAccount = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from sqlalchemy import or_
+
+    query = select(LearningSession).order_by(LearningSession.session_date)
+
+    if current_user.role == "STUDENT":
+        if not private_request_id and not class_id:
+            # Lấy tất cả lịch học của học viên
+            req_query = select(PrivateTutoringRequest.id).where(
+                PrivateTutoringRequest.student_account_id == current_user.id
+            )
+            class_query = select(ClassRegistration.class_id).where(
+                ClassRegistration.student_account_id == current_user.id
+            )
+            query = query.where(
+                or_(
+                    LearningSession.private_request_id.in_(req_query),
+                    LearningSession.class_id.in_(class_query),
+                )
+            )
+        else:
+            if private_request_id:
+                req_result = await db.execute(
+                    select(PrivateTutoringRequest).where(
+                        PrivateTutoringRequest.id == private_request_id,
+                        PrivateTutoringRequest.student_account_id == current_user.id,
+                    )
+                )
+                if not req_result.scalar_one_or_none():
+                    raise HTTPException(status.HTTP_403_FORBIDDEN, "Bạn không có quyền truy cập.")
+                query = query.where(LearningSession.private_request_id == private_request_id)
+
+            if class_id:
+                reg_result = await db.execute(
+                    select(ClassRegistration).where(
+                        ClassRegistration.class_id == class_id,
+                        ClassRegistration.student_account_id == current_user.id,
+                    )
+                )
+                if not reg_result.scalar_one_or_none():
+                    raise HTTPException(status.HTTP_403_FORBIDDEN, "Bạn không có quyền truy cập.")
+                query = query.where(LearningSession.class_id == class_id)
+    else:
+        # Staff, Admin, Tutor
+        if private_request_id:
+            query = query.where(LearningSession.private_request_id == private_request_id)
+        if class_id:
+            query = query.where(LearningSession.class_id == class_id)
+
+        # Tutor: only their sessions
+        if current_user.role == "TUTOR" and current_user.tutor_profile:
+            query = query.where(LearningSession.tutor_id == current_user.tutor_profile.id)
+
+    result = await db.execute(query)
+    sessions = result.scalars().all()
+
+    # Enrich with tutor names and class titles
+    from app.models.tutor_profile import TutorProfile
+
+    tutor_ids = {s.tutor_id for s in sessions}
+    class_ids = {s.class_id for s in sessions if s.class_id}
+    req_ids = {s.private_request_id for s in sessions if s.private_request_id}
+
+    tutor_names: dict[int, str] = {}
+    if tutor_ids:
+        tp_result = await db.execute(
+            select(TutorProfile.id, UserAccount.full_name)
+            .join(UserAccount, TutorProfile.account_id == UserAccount.id)
+            .where(TutorProfile.id.in_(tutor_ids))
+        )
+        tutor_names = {row[0]: row[1] for row in tp_result.all()}
+
+    class_titles: dict[int, str] = {}
+    if class_ids:
+        cc_result = await db.execute(
+            select(CourseClass.id, CourseClass.title).where(CourseClass.id.in_(class_ids))
+        )
+        class_titles = {row[0]: row[1] for row in cc_result.all()}
+        
+    req_titles: dict[int, str] = {}
+    if req_ids:
+        from app.models.subject import Subject
+        req_result = await db.execute(
+            select(PrivateTutoringRequest.id, Subject.name, PrivateTutoringRequest.grade_level)
+            .join(Subject, PrivateTutoringRequest.subject_id == Subject.id)
+            .where(PrivateTutoringRequest.id.in_(req_ids))
+        )
+        req_titles = {row[0]: f"{row[1]} - {row[2]}" for row in req_result.all()}
+
+    data = []
+    for s in sessions:
+        resp = LearningSessionResponse.model_validate(s)
+        resp.tutor_name = tutor_names.get(s.tutor_id)
+        if s.class_id:
+            resp.class_title = class_titles.get(s.class_id)
+        if s.private_request_id:
+            resp.private_request_title = req_titles.get(s.private_request_id)
+        data.append(resp)
+
+    return ApiResponse(data=data)
+
+
+@router.put(
+    "/sessions/{session_id}/attendance",
+    response_model=ApiResponse,
+    summary="Gia sư điểm danh buổi học",
+)
+async def update_attendance(
+    session_id: int,
+    body: SessionAttendanceUpdate,
+    current_user: UserAccount = Depends(require_role("TUTOR", "STAFF", "SUPER_ADMIN")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(LearningSession).where(LearningSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Không tìm thấy buổi học.")
+
+    # Tutor can only update their own sessions
+    if current_user.role == "TUTOR":
+        if not current_user.tutor_profile or session.tutor_id != current_user.tutor_profile.id:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Không phải buổi học của bạn.")
+
+    if body.status not in ("COMPLETED", "CANCELLED", "NO_SHOW"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Status phải là COMPLETED, CANCELLED hoặc NO_SHOW.")
+
+    session.status = body.status
+    session.attendance_note = body.attendance_note
+    await db.commit()
+    await db.refresh(session)
+    return ApiResponse(
+        data=LearningSessionResponse.model_validate(session),
+        message=f"Đã cập nhật buổi học sang {body.status}.",
+    )
+
+
+# ── Teaching Contracts ───────────────────────────────────
+
+
+@router.post(
+    "/contracts",
+    response_model=ApiResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Staff tạo hợp đồng giảng dạy",
+)
+async def create_contract(
+    body: TeachingContractCreate,
+    current_user: UserAccount = Depends(require_role("STAFF", "SUPER_ADMIN")),
+    db: AsyncSession = Depends(get_db),
+):
+    contract = TeachingContract(**body.model_dump())
+    db.add(contract)
+    await db.commit()
+    await db.refresh(contract)
+    return ApiResponse(
+        data=TeachingContractResponse.model_validate(contract),
+        message="Tạo hợp đồng thành công.",
+    )
+
+
+@router.get("/contracts", response_model=ApiResponse, summary="Danh sách hợp đồng")
+async def list_contracts(
+    current_user: UserAccount = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(TeachingContract).order_by(TeachingContract.created_at.desc())
+    if current_user.role == "TUTOR" and current_user.tutor_profile:
+        query = query.where(TeachingContract.tutor_id == current_user.tutor_profile.id)
+    result = await db.execute(query)
+    contracts = result.scalars().all()
+
+    enriched_contracts = []
+    if contracts:
+        from app.models.tutor_profile import TutorProfile
+        from app.models.user_account import UserAccount
+        from app.models.private_tutoring_request import PrivateTutoringRequest
+        from app.models.course_class import CourseClass
+
+        # Pre-fetch Tutors
+        tutor_ids = {c.tutor_id for c in contracts}
+        tutors = {}
+        if tutor_ids:
+            tutor_query = select(TutorProfile.id, UserAccount.full_name).join(
+                UserAccount, TutorProfile.account_id == UserAccount.id
+            ).where(TutorProfile.id.in_(tutor_ids))
+            tutor_result = await db.execute(tutor_query)
+            for t_id, name in tutor_result:
+                tutors[t_id] = name
+
+        # Pre-fetch Requests
+        req_ids = {c.private_request_id for c in contracts if c.private_request_id}
+        reqs = {}
+        if req_ids:
+            req_query = select(PrivateTutoringRequest.id, PrivateTutoringRequest.requested_sessions).where(PrivateTutoringRequest.id.in_(req_ids))
+            req_result = await db.execute(req_query)
+            for r_id, sessions in req_result:
+                reqs[r_id] = f"Yêu cầu 1-1 ({sessions} buổi)"
+
+        # Pre-fetch Classes
+        class_ids = {c.class_id for c in contracts if c.class_id}
+        classes = {}
+        if class_ids:
+            class_query = select(CourseClass.id, CourseClass.title).where(CourseClass.id.in_(class_ids))
+            class_result = await db.execute(class_query)
+            for c_id, title in class_result:
+                classes[c_id] = title
+
+        for c in contracts:
+            resp = TeachingContractResponse.model_validate(c)
+            resp.tutor_name = tutors.get(c.tutor_id)
+            if c.private_request_id:
+                resp.target_name = reqs.get(c.private_request_id)
+            elif c.class_id:
+                resp.target_name = classes.get(c.class_id)
+            enriched_contracts.append(resp)
+    else:
+        enriched_contracts = []
+
+    return ApiResponse(data=enriched_contracts)
+
+
+@router.put(
+    "/contracts/{contract_id}/status",
+    response_model=ApiResponse,
+    summary="Staff cập nhật trạng thái hợp đồng",
+)
+async def update_contract_status(
+    contract_id: int,
+    new_status: str,
+    current_user: UserAccount = Depends(require_role("STAFF", "SUPER_ADMIN")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(TeachingContract).where(TeachingContract.id == contract_id)
+    )
+    contract = result.scalar_one_or_none()
+    if not contract:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Không tìm thấy hợp đồng.")
+    contract.status = new_status
+    await db.commit()
+    await db.refresh(contract)
+    return ApiResponse(
+        data=TeachingContractResponse.model_validate(contract),
+        message=f"Đã cập nhật hợp đồng sang {new_status}.",
+    )
+
+
+# ── Schedule Blocks ──────────────────────────────────────
+
+
+@router.get("/schedule-blocks", response_model=ApiResponse, summary="Danh sách khung giờ đã khoá")
+async def list_schedule_blocks(
+    tutor_id: int | None = None,
+    current_user: UserAccount = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if current_user.role not in ("STAFF", "SUPER_ADMIN"):
+        if current_user.role == "TUTOR" and current_user.tutor_profile:
+            if tutor_id and tutor_id != current_user.tutor_profile.id:
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Bạn không có quyền truy cập.")
+            tutor_id = current_user.tutor_profile.id
+        else:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Bạn không có quyền truy cập.")
+
+    query = select(ScheduleBlock).where(ScheduleBlock.status == "ACTIVE")
+    if tutor_id:
+        query = query.where(ScheduleBlock.tutor_id == tutor_id)
+    elif current_user.role == "TUTOR" and current_user.tutor_profile:
+        query = query.where(ScheduleBlock.tutor_id == current_user.tutor_profile.id)
+    result = await db.execute(query)
+    blocks = result.scalars().all()
+    data = [
+        {
+            "id": b.id, "tutor_id": b.tutor_id,
+            "day_of_week": b.day_of_week,
+            "start_time": str(b.start_time), "end_time": str(b.end_time),
+            "status": b.status,
+        }
+        for b in blocks
+    ]
+    return ApiResponse(data=data)
+
+
+# ── Helpers ──────────────────────────────────────────────
+
+
+async def _resolve_tutor_id(body: SchedulePatternCreate, db: AsyncSession) -> int:
+    """Resolve tutor_id from private_request or class."""
+    if body.private_request_id:
+        from app.models.private_tutoring_request import PrivateTutoringRequest
+        result = await db.execute(
+            select(PrivateTutoringRequest).where(
+                PrivateTutoringRequest.id == body.private_request_id
+            )
+        )
+        req = result.scalar_one_or_none()
+        if not req:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Không tìm thấy yêu cầu 1-1.")
+        return req.tutor_id
+    else:
+        from app.models.course_class import CourseClass
+        result = await db.execute(
+            select(CourseClass).where(CourseClass.id == body.class_id)
+        )
+        cc = result.scalar_one_or_none()
+        if not cc or not cc.primary_tutor_id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Lớp chưa có gia sư chính.")
+        return cc.primary_tutor_id
+
+
+def _generate_sessions(
+    body: SchedulePatternCreate,
+    tutor_id: int,
+    pattern: SchedulePattern,
+) -> list[LearningSession]:
+    """Generate individual learning sessions from a weekly pattern."""
+    sessions: list[LearningSession] = []
+
+    # Map day_of_week (1=Mon, 7=Sun) to Python weekday (0=Mon, 6=Sun)
+    target_weekday = body.day_of_week - 1
+    total = body.total_sessions or 12  # default 12 sessions
+
+    current_date = body.start_date
+    # Find first matching weekday
+    while current_date.weekday() != target_weekday:
+        current_date += timedelta(days=1)
+
+    session_num = 0
+    while session_num < total:
+        if body.end_date and current_date > body.end_date:
+            break
+
+        session_num += 1
+        session = LearningSession(
+            private_request_id=body.private_request_id,
+            class_id=body.class_id,
+            tutor_id=tutor_id,
+            session_number=session_num,
+            session_date=current_date,
+            start_time=body.start_time,
+            end_time=body.end_time,
+        )
+        sessions.append(session)
+        current_date += timedelta(weeks=1)
+
+    return sessions
