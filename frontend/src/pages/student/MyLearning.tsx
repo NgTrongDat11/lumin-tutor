@@ -76,10 +76,8 @@ export default function StudentMyLearning() {
   };
 
   const handleQrPaid = useCallback(() => {
-    toast('success', 'Thanh toán thành công! 🎉');
-    setQrPayment(null);
-    loadData();
-  }, [loadData, toast]);
+    navigate('/student/payments');
+  }, [navigate]);
 
   if (loading) return <PageLoading />;
 
