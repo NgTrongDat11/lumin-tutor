@@ -185,6 +185,7 @@ async def _filter_and_score_classes(
     """Filter enrolling classes and score them against the learning need."""
 
     query = select(CourseClass).where(
+        CourseClass.private_request_id.is_(None),
         CourseClass.status.in_(("ENROLLING", "READY", "TUTOR_RECRUITING"))
     )
     if need.subject_id:
@@ -342,4 +343,3 @@ def _check_block_conflict(
                     return True  # Conflict found
 
     return False
-

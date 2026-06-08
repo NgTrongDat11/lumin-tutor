@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ComponentType } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { messageApi, notificationApi } from '../../services/api';
+import { messageApi, notificationApi, privateRequestApi } from '../../services/api';
 import type { NotificationResponse, UserRole } from '../../types';
 import ChatBubble from '../chat/ChatBubble';
 import Avatar from '../ui/Avatar';
@@ -39,7 +39,7 @@ const menuConfig: Record<UserRole, MenuSection[]> = {
       items: [
         { label: 'Khám phá', path: '/student', icon: SearchIcon },
         { label: 'Thời khóa biểu', path: '/student/schedule', icon: CalendarIcon },
-        { label: 'Lớp của tôi', path: '/student/my-learning', icon: BookOpenIcon },
+        { label: 'Việc học', path: '/student/my-learning', icon: BookOpenIcon },
         { label: 'Thanh toán', path: '/student/payments', icon: WalletIcon },
         { label: 'Đánh giá', path: '/student/reviews', icon: UserCheckIcon },
         { label: 'Tin nhắn', path: '/student/messages', icon: MessageCircleIcon },
@@ -52,7 +52,7 @@ const menuConfig: Record<UserRole, MenuSection[]> = {
       items: [
         { label: 'Tổng quan', path: '/tutor', icon: ChartIcon },
         { label: 'Lịch dạy', path: '/tutor/schedule', icon: CalendarIcon, match: ['/tutor/sessions', '/tutor/availability'] },
-        { label: 'Lớp & môn dạy', path: '/tutor/teaching', icon: BookOpenIcon, match: ['/tutor/subjects'] },
+        { label: 'Công việc dạy', path: '/tutor/teaching', icon: BookOpenIcon, match: ['/tutor/subjects'] },
         { label: 'Cơ hội dạy', path: '/tutor/opportunities', icon: ClipboardCheckIcon, match: ['/tutor/private-requests', '/tutor/applications'] },
         { label: 'Tin nhắn', path: '/tutor/messages', icon: MessageCircleIcon },
         { label: 'Hồ sơ gia sư', path: '/tutor/profile', icon: UserCheckIcon, match: ['/tutor/qualifications'] },
@@ -133,6 +133,7 @@ export default function DashboardLayout() {
   const [notifications, setNotifications] = useState<NotificationResponse[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const [pendingOpportunities, setPendingOpportunities] = useState(0);
   const [notiLimit, setNotiLimit] = useState(5);
   const [notiLoading, setNotiLoading] = useState(false);
 
@@ -164,6 +165,23 @@ export default function DashboardLayout() {
     const interval = setInterval(fetchUnreadMessages, 30_000);
     return () => clearInterval(interval);
   }, [fetchUnreadMessages]);
+
+  // Fetch pending opportunities count (tutor only)
+  const fetchPendingOpps = useCallback(() => {
+    if (user?.role !== 'TUTOR') return;
+    privateRequestApi.list()
+      .then((requests) => {
+        const pending = requests.filter((r) => r.status === 'SENT').length;
+        setPendingOpportunities(pending);
+      })
+      .catch(() => {});
+  }, [user?.role]);
+
+  useEffect(() => {
+    fetchPendingOpps();
+    const interval = setInterval(fetchPendingOpps, 30_000);
+    return () => clearInterval(interval);
+  }, [fetchPendingOpps]);
 
   const fetchNotifications = useCallback((limit: number) => {
     setNotiLoading(true);
@@ -286,6 +304,11 @@ export default function DashboardLayout() {
                       {item.label === 'Tin nhắn' && unreadMessages > 0 && (
                         <span className="ml-auto flex h-5 min-w-[20px] items-center justify-center rounded-full bg-danger-500 px-1.5 text-[10px] font-bold text-white">
                           {unreadMessages > 99 ? '99+' : unreadMessages}
+                        </span>
+                      )}
+                      {item.label === 'Cơ hội dạy' && pendingOpportunities > 0 && (
+                        <span className="ml-auto flex h-5 min-w-[20px] items-center justify-center rounded-full bg-warning-500 px-1.5 text-[10px] font-bold text-white">
+                          {pendingOpportunities}
                         </span>
                       )}
                     </Link>
@@ -628,8 +651,8 @@ export default function DashboardLayout() {
               const active = isActiveItem(item, location.pathname);
               const mobileLabel = item.label === 'Thời khóa biểu'
                 ? 'Lịch'
-                : item.label === 'Lớp của tôi'
-                  ? 'Lớp'
+                : item.label === 'Việc học'
+                  ? 'Học'
                   : item.label === 'Tin nhắn'
                     ? 'Nhắn'
                   : item.label;

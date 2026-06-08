@@ -65,7 +65,7 @@ Kết quả được sắp xếp theo tổng điểm từ cao đến thấp.
 ## Một số đường dẫn giao diện
 - Trang chủ Khám phá: /student (xem lớp nhóm, gia sư)
 - Thời khóa biểu: /student/schedule
-- Lớp của tôi: /student/my-learning
+- Việc học: /student/my-learning
 - Thanh toán: /student/payments
 - Đánh giá: /student/reviews
 
@@ -414,7 +414,10 @@ async def _get_open_group_classes(db: AsyncSession) -> list[dict[str, Any]]:
     result = await db.execute(
         select(CourseClass, Subject.name)
         .join(Subject, Subject.id == CourseClass.subject_id)
-        .where(CourseClass.status.in_(("ENROLLING", "READY")))
+        .where(
+            CourseClass.private_request_id.is_(None),
+            CourseClass.status.in_(("ENROLLING", "READY")),
+        )
         .order_by(CourseClass.created_at.desc())
         .limit(15)
     )

@@ -18,6 +18,8 @@ class PrivateRequestCreate(BaseModel):
 
 class TutorConfirmRequest(BaseModel):
     agreed_fee_per_session: Decimal = Field(gt=0)
+    agreed_sessions: int | None = Field(default=None, gt=0)
+    class_title: str | None = Field(default=None, max_length=200)
     response_note: str | None = None
 
 

@@ -321,6 +321,9 @@ export const privateRequestApi = {
 
   reject: (id: number, data: PrivateRequestReject = {}) =>
     api.post<ApiResponse<PrivateRequestResponse>>(`/private-requests/${id}/reject`, data).then(unwrap),
+
+  studentProfile: (id: number) =>
+    api.get<ApiResponse<any>>(`/private-requests/${id}/student-profile`).then(unwrap),
 };
 
 /* ═══════════════════════════════════════════════════
@@ -330,8 +333,8 @@ export const classApi = {
   create: (data: CourseClassCreate) =>
     api.post<ApiResponse<CourseClassResponse>>('/classes', data).then(unwrap),
 
-  list: () =>
-    api.get<ApiResponse<CourseClassResponse[]>>('/classes').then(unwrap),
+  list: (params?: { for_tutor?: boolean; status_filter?: string }) =>
+    api.get<ApiResponse<CourseClassResponse[]>>('/classes', { params }).then(unwrap),
 
   get: (id: number) =>
     api.get<ApiResponse<CourseClassResponse>>(`/classes/${id}`).then(unwrap),

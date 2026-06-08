@@ -14,7 +14,7 @@ export function SessionDetailModal({ session, onClose }: { session: LearningSess
   if (!session) return null;
 
   const isPast = isPastSessionDate(session.session_date);
-  const sessionType = session.class_id ? 'Lớp nhóm' : 'Học 1-1';
+  const sessionType = session.class_id ? 'Lớp nhóm' : 'Buổi 1-1';
   const sessionLabel = session.class_title || session.private_request_title || (session.private_request_id ? `Yêu cầu 1-1 #${session.private_request_id}` : 'Buổi học');
 
   return (

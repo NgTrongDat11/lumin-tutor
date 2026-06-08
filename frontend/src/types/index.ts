@@ -392,6 +392,8 @@ export interface PrivateRequestResponse {
 
 export interface PrivateRequestConfirm {
   agreed_fee_per_session: string;
+  agreed_sessions?: number;
+  class_title?: string;
   response_note?: string;
 }
 
@@ -424,6 +426,7 @@ export interface CourseClassCreate {
 
 export interface CourseClassResponse {
   id: number;
+  private_request_id: number | null;
   subject_id: number;
   primary_tutor_id: number | null;
   title: string;
@@ -459,6 +462,7 @@ export interface ClassRegistrationCreate {
 export interface ClassRegistrationResponse {
   id: number;
   class_id: number;
+  private_request_id: number | null;
   student_account_id: number;
   learning_need_id: number | null;
   status: string;

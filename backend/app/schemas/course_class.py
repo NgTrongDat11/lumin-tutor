@@ -23,6 +23,7 @@ class CourseClassCreate(BaseModel):
 
 class CourseClassResponse(BaseModel):
     id: int
+    private_request_id: int | None = None
     subject_id: int
     primary_tutor_id: int | None
     title: str
@@ -70,6 +71,7 @@ class ClassRegistrationCreate(BaseModel):
 class ClassRegistrationResponse(BaseModel):
     id: int
     class_id: int
+    private_request_id: int | None = None
     student_account_id: int
     learning_need_id: int | None
     status: str

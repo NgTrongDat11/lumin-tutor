@@ -65,25 +65,56 @@ export default function TutorTeaching() {
   });
 
   const activeSessions = sessions.filter((session) => session.status === 'SCHEDULED');
+  const completedSessions = sessions.filter((session) => session.status === 'COMPLETED');
+  const activeTeachingClasses = ownedClasses.filter((course) => course.status !== 'COMPLETED');
+  const completedClasses = ownedClasses.filter((course) => course.status === 'COMPLETED');
   const approvedSubjects = subjects.filter((subject) => subject.status === 'APPROVED');
   const pendingSubjects = subjects.filter((subject) => subject.status === 'PENDING');
 
   if (loading) return <DashboardSkeleton />;
 
+  const renderClassCard = (course: CourseClassResponse) => {
+    const isPrivateClass = Boolean(course.private_request_id);
+    return (
+      <article key={course.id} className="rounded-lg border border-border-light bg-surface-secondary p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-semibold text-text-primary">{course.title}</h3>
+              <span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-primary-700">
+                {isPrivateClass ? '1-1' : 'Lớp nhóm'}
+              </span>
+              {getStatusBadge(course.status)}
+            </div>
+            <p className="mt-1 text-sm text-text-secondary">
+              {course.grade_level} · {course.total_sessions} buổi · {isPrivateClass ? '1 học viên' : `${course.min_students}-${course.max_students} học viên`}
+            </p>
+            <p className="mt-1 text-xs text-text-tertiary">
+              {course.mode === 'ONLINE' ? 'Trực tuyến' : course.location || 'Trực tiếp'}
+            </p>
+          </div>
+          <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-primary-800">
+            {currency(course.fee_per_session_per_student)}/{isPrivateClass ? 'buổi' : 'HV'}
+          </span>
+        </div>
+      </article>
+    );
+  };
+
   return (
     <PortalPage
-      title="Môn dạy và lớp phụ trách"
-      description="Đăng ký môn là khai báo năng lực dạy, không tạo lớp mới. Môn được duyệt dùng cho gợi ý 1-1 và điều kiện ứng tuyển lớp nhóm."
-      actions={<Button onClick={() => setShowAdd(true)}>Đăng ký môn dạy</Button>}
+      title="Công việc dạy"
+      description="Theo dõi lớp/buổi đang phụ trách, lịch sử đã dạy và năng lực nhận việc của gia sư."
+      actions={<Button onClick={() => setShowAdd(true)}>Khai báo năng lực</Button>}
     >
       <div className="grid gap-4 md:grid-cols-4">
-        <MetricTile icon={LayersIcon} label="Lớp đang phụ trách" value={ownedClasses.length} hint="Lớp có lịch hoặc đã gán gia sư." />
+        <MetricTile icon={LayersIcon} label="Đang phụ trách" value={activeTeachingClasses.length} hint="Lớp nhóm hoặc 1-1 đang mở." />
         <MetricTile icon={CalendarIcon} label="Buổi sắp tới" value={activeSessions.length} hint="Các buổi còn cần dạy hoặc điểm danh." tone="success" />
-        <MetricTile icon={BookOpenIcon} label="Môn đã duyệt" value={approvedSubjects.length} hint="Được dùng cho gợi ý 1-1 và ứng tuyển lớp." tone="neutral" />
-        <MetricTile icon={WalletIcon} label="Môn chờ duyệt" value={pendingSubjects.length} hint="Chỉ môn mới chờ duyệt, hồ sơ vẫn hoạt động." tone="warning" />
+        <MetricTile icon={BookOpenIcon} label="Đã hoàn thành" value={completedClasses.length || completedSessions.length} hint="Lớp hoặc buổi đã kết thúc." tone="neutral" />
+        <MetricTile icon={WalletIcon} label="Năng lực duyệt" value={approvedSubjects.length} hint={`${pendingSubjects.length} đang chờ duyệt.`} tone="warning" />
       </div>
 
-      <SectionPanel title="Luồng nhận việc" description="Hai luồng dùng chung năng lực dạy đã duyệt, nhưng cách vận hành khác nhau.">
+      <SectionPanel title="Nguồn công việc" description="Gia sư nhận lớp từ hai nguồn, nhưng không tự mở lớp nhóm trên trang này.">
         <div className="grid gap-3 lg:grid-cols-2">
           <article className="rounded-lg border border-primary-100 bg-primary-50 p-4">
             <p className="text-xs font-bold uppercase tracking-wide text-primary-700">1-1</p>
@@ -102,40 +133,32 @@ export default function TutorTeaching() {
         </div>
       </SectionPanel>
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
-        <SectionPanel title="Lớp đang dạy" description="Nếu lớp chưa được gán hoặc chưa có lịch, nó sẽ chưa xuất hiện trong danh sách này.">
-          {ownedClasses.length === 0 ? (
+      <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
+        <div className="space-y-6">
+        <SectionPanel title="Đang dạy" description="Lớp nhóm được phân công và lớp 1-1 đã chốt với học viên.">
+          {activeTeachingClasses.length === 0 ? (
             <EmptyPanel title="Chưa có lớp đang dạy" description="Khi nhân viên chọn bạn cho lớp hoặc tạo buổi học, lớp sẽ nằm tại đây." />
           ) : (
             <div className="space-y-3">
-              {ownedClasses.map((course) => (
-                <article key={course.id} className="rounded-lg border border-border-light bg-surface-secondary p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-semibold text-text-primary">{course.title}</h3>
-                        {getStatusBadge(course.status)}
-                      </div>
-                      <p className="mt-1 text-sm text-text-secondary">
-                        {course.grade_level} · {course.total_sessions} buổi · {course.min_students}-{course.max_students} học viên
-                      </p>
-                      <p className="mt-1 text-xs text-text-tertiary">
-                        {course.mode === 'ONLINE' ? 'Trực tuyến' : course.location || 'Trực tiếp'}
-                      </p>
-                    </div>
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-primary-800">
-                      {currency(course.fee_per_session_per_student)}/HV
-                    </span>
-                  </div>
-                </article>
-              ))}
+              {activeTeachingClasses.map(renderClassCard)}
             </div>
           )}
         </SectionPanel>
 
-        <SectionPanel title="Môn đăng ký dạy" description="Môn đã duyệt giúp học viên thấy gia sư trong gợi ý 1-1 và giúp hệ thống kiểm tra khi gia sư ứng tuyển lớp nhóm.">
+        <SectionPanel title="Đã dạy" description="Các lớp hoặc buổi đã hoàn thành.">
+          {completedClasses.length === 0 ? (
+            <EmptyPanel title="Chưa có lớp đã hoàn thành" description="Lớp hoàn tất sẽ được lưu tại đây để đối soát lịch sử giảng dạy." />
+          ) : (
+            <div className="space-y-3">
+              {completedClasses.map(renderClassCard)}
+            </div>
+          )}
+        </SectionPanel>
+        </div>
+
+        <SectionPanel title="Năng lực nhận việc" description="Môn, cấp lớp và đơn giá tham chiếu dùng để nhận yêu cầu 1-1 và ứng tuyển lớp nhóm.">
           {subjects.length === 0 ? (
-            <EmptyPanel title="Chưa đăng ký môn dạy" description="Đăng ký môn, cấp lớp và học phí để nhân viên duyệt năng lực dạy." action={<Button onClick={() => setShowAdd(true)}>Đăng ký môn dạy</Button>} />
+            <EmptyPanel title="Chưa khai báo năng lực" description="Khai báo môn, cấp lớp và học phí để nhân viên duyệt năng lực dạy." action={<Button onClick={() => setShowAdd(true)}>Khai báo năng lực</Button>} />
           ) : (
             <div className="space-y-3">
               {subjects.map((subject) => (
@@ -206,11 +229,11 @@ function AddSubjectModal({ open, onClose, allSubjects, onAdded, toast }: { open:
     <Modal
       open={open}
       onClose={onClose}
-      title="Đăng ký môn dạy"
+      title="Khai báo năng lực dạy"
       footer={(
         <>
           <Button variant="outline" onClick={onClose}>Hủy</Button>
-          <Button loading={saving} onClick={(event) => handleSubmit(event as unknown as FormEvent)}>Đăng ký môn</Button>
+          <Button loading={saving} onClick={(event) => handleSubmit(event as unknown as FormEvent)}>Gửi duyệt năng lực</Button>
         </>
       )}
     >

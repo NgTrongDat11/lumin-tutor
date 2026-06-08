@@ -52,7 +52,7 @@ interface UnifiedLearningItem {
 const sessionTypeFilters: { value: SessionTypeFilter; label: string }[] = [
   { value: 'ALL', label: 'Tất cả' },
   { value: 'CLASS', label: 'Lớp nhóm' },
-  { value: 'PRIVATE', label: 'Học 1-1' },
+  { value: 'PRIVATE', label: '1-1' },
 ];
 
 export default function StudentMyLearning() {
@@ -245,9 +245,9 @@ function ActiveLearningView({
   if (primaryItems.length === 0 && waitingItems.length === 0) {
     return (
       <EmptyPanel
-        title="Chưa có lớp đang học"
+        title="Chưa có việc học nào"
         description="Các lớp nhóm, yêu cầu học 1-1 và yêu cầu đang chờ sẽ xuất hiện tại đây."
-        action={<Button onClick={onExplore}>Khám phá lớp học</Button>}
+        action={<Button onClick={onExplore}>Khám phá lớp và gia sư</Button>}
       />
     );
   }
@@ -642,7 +642,7 @@ function buildLearningItems(
     }
   });
 
-  const classItems: UnifiedLearningItem[] = myClasses.map((reg) => ({
+  const classItems: UnifiedLearningItem[] = myClasses.filter((reg) => !reg.private_request_id).map((reg) => ({
     key: `CLASS_${reg.id}`,
     type: 'CLASS',
     id: reg.class_id,
@@ -672,7 +672,7 @@ function buildLearningItems(
     status: request.status,
     note: request.tutor_response_note,
     modeLabel: formatModeLabel(request.mode),
-    typeLabel: 'Học 1-1',
+    typeLabel: request.status === 'SENT' || request.status === 'TUTOR_REJECTED' ? 'Yêu cầu 1-1' : 'Buổi 1-1',
     sessions: sessionsByRequest.get(request.id) ?? [],
   }));
 

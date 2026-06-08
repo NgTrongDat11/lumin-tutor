@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, get_db, require_role
@@ -58,14 +58,47 @@ async def create_class(
 
 @router.get("", response_model=ApiResponse, summary="Danh sách lớp nhóm")
 async def list_classes(
+    status_filter: str | None = None,
+    for_tutor: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: UserAccount = Depends(get_current_user),
 ):
     from app.models.tutor_profile import TutorProfile
 
-    result = await db.execute(
-        select(CourseClass).order_by(CourseClass.created_at.desc())
-    )
+    query = select(CourseClass)
+
+    if current_user.role == "STUDENT":
+        query = query.where(CourseClass.private_request_id.is_(None))
+    elif current_user.role == "TUTOR" and current_user.tutor_profile and not for_tutor:
+        query = query.where(
+            or_(
+                CourseClass.private_request_id.is_(None),
+                CourseClass.primary_tutor_id == current_user.tutor_profile.id,
+            )
+        )
+
+    # Filter by status if provided
+    if status_filter:
+        query = query.where(CourseClass.status == status_filter)
+
+    # For tutor: only show classes matching their subjects
+    if for_tutor and current_user.role == "TUTOR" and current_user.tutor_profile:
+        tutor_subject_result = await db.execute(
+            select(TutorSubject.subject_id).where(
+                TutorSubject.tutor_id == current_user.tutor_profile.id
+            )
+        )
+        tutor_subject_ids = [row[0] for row in tutor_subject_result.all()]
+        if tutor_subject_ids:
+            query = query.where(CourseClass.subject_id.in_(tutor_subject_ids))
+        else:
+            # Tutor has no subjects registered, return empty
+            return ApiResponse(data=[])
+        # Also default to TUTOR_RECRUITING for tutor view
+        if not status_filter:
+            query = query.where(CourseClass.status == "TUTOR_RECRUITING")
+
+    result = await db.execute(query.order_by(CourseClass.created_at.desc()))
     classes = result.scalars().all()
 
     # Enrich with tutor names
@@ -110,6 +143,7 @@ async def list_my_registrations(
     for row in result.all():
         reg, course_class, subject_name, tutor_name = row
         resp = ClassRegistrationResponse.model_validate(reg)
+        resp.private_request_id = course_class.private_request_id
         resp.class_title = course_class.title
         resp.tutor_name = tutor_name or "Chưa phân công"
         resp.subject_name = subject_name

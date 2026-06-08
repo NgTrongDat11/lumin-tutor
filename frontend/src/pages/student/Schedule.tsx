@@ -61,11 +61,11 @@ function isSameDate(a: Date, b: Date) {
 }
 
 function getSessionTitle(session: LearningSessionResponse) {
-  return session.class_title || session.private_request_title || (session.private_request_id ? 'Học 1-1' : `Buổi học #${session.session_number}`);
+  return session.class_title || session.private_request_title || (session.private_request_id ? 'Yêu cầu 1-1' : `Buổi học #${session.session_number}`);
 }
 
 function getSessionTypeLabel(session: LearningSessionResponse) {
-  return session.class_id ? 'Lớp nhóm' : 'Học 1-1';
+  return session.class_id ? 'Lớp nhóm' : 'Buổi 1-1';
 }
 
 function formatSessionTime(session: LearningSessionResponse) {

@@ -328,7 +328,7 @@ export default function StudentDashboard() {
         subjectApi.list().catch(() => []),
         tutorApi.browse().catch(() => []),
       ]);
-      setClasses(c);
+      setClasses(c.filter((course) => !course.private_request_id));
       setSubjects(s);
       setBrowseTutors(t);
       setLearningNeeds(n);
@@ -1716,20 +1716,30 @@ function SendRequestModal({
   onCreated,
   toast,
 }: SendRequestModalProps) {
+  const initialSubjectId =
+    tutor.subjects.find((s) => activeNeed?.subject_id && s.subject_id === activeNeed.subject_id)?.subject_id ||
+    tutor.subjects[0]?.subject_id ||
+    0;
+  const shouldPrefillGoal = !activeNeed?.subject_id || activeNeed.subject_id === initialSubjectId;
   const [loading, setLoading] = useState(false);
-  const [subjectId, setSubjectId] = useState<number>(tutor.subjects[0]?.subject_id || 0);
+  const [subjectId, setSubjectId] = useState<number>(initialSubjectId);
   const [requestedSessions, setRequestedSessions] = useState<number>(10);
   const [mode, setMode] = useState<string>('ONLINE');
-  const [goal, setGoal] = useState<string>(activeNeed?.goal || '');
+  const [goal, setGoal] = useState<string>(shouldPrefillGoal ? activeNeed?.goal || '' : '');
 
   // Find the selected subject details to obtain grade_level
   const selectedSubject = tutor.subjects.find((s) => s.subject_id === subjectId);
   const gradeLevel = selectedSubject?.grade_level || '';
+  const feePerSession = Number(selectedSubject?.fee_per_session || 0);
+  const estimatedTotal = feePerSession * Math.max(requestedSessions || 0, 0);
+  const subjectSummary = selectedSubject
+    ? `${selectedSubject.subject_name || 'Môn học'} - ${selectedSubject.grade_level}`
+    : 'môn gia sư đã được duyệt';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!subjectId) {
-      toast('error', 'Vui lòng chọn môn học');
+      toast('error', 'Vui lòng chọn năng lực dạy muốn học 1-1');
       return;
     }
     setLoading(true);
@@ -1756,27 +1766,27 @@ function SendRequestModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`Gửi yêu cầu học 1-1 đến gia sư ${tutor.full_name}`}
+      title={`Mời ${tutor.full_name} dạy 1-1`}
       size="md"
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={loading}>Hủy</Button>
-          <Button onClick={handleSubmit} loading={loading}>Gửi yêu cầu và mở tin nhắn</Button>
+          <Button onClick={handleSubmit} loading={loading}>Gửi lời mời và mở tin nhắn</Button>
         </>
       }
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="rounded-lg border border-primary-100 bg-primary-50 p-3">
-          <p className="text-sm font-semibold text-primary-900">Đây không phải tạo lớp mới</p>
+          <p className="text-sm font-semibold text-primary-900">Đây là lời mời học riêng, chưa phải lớp học</p>
           <p className="mt-1 text-sm leading-6 text-primary-800">
-            Yêu cầu 1-1 là lời mời học riêng gửi tới gia sư. Sau khi gửi, hệ thống mở tin nhắn để bạn trao đổi lịch, mục tiêu và học phí trước khi thanh toán.
+            Học viên chọn một năng lực dạy đã được duyệt của gia sư để gửi yêu cầu 1-1. Lớp 1-1 chỉ được hệ thống tạo sau khi gia sư xác nhận lịch và học phí.
           </p>
         </div>
         <div className="grid gap-2 sm:grid-cols-3">
           {[
-            ['1', 'Gửi yêu cầu'],
-            ['2', 'Trao đổi với gia sư'],
-            ['3', 'Gia sư xác nhận'],
+            ['1', 'Gửi lời mời'],
+            ['2', 'Nhắn tin chốt lịch'],
+            ['3', 'Tạo buổi 1-1'],
           ].map(([step, label]) => (
             <div key={step} className="rounded-lg border border-border-light bg-surface-secondary p-3">
               <p className="text-xs font-bold text-primary-700">Bước {step}</p>
@@ -1785,7 +1795,7 @@ function SendRequestModal({
           ))}
         </div>
         <div>
-          <label className="block text-sm font-bold text-text-secondary mb-1">Môn/bậc học muốn học</label>
+          <label className="block text-sm font-bold text-text-secondary mb-1">Năng lực dạy muốn mời học</label>
           <Select
             value={subjectId}
             onChange={(e) => setSubjectId(Number(e.target.value))}
@@ -1798,7 +1808,7 @@ function SendRequestModal({
             ))}
           </Select>
           <p className="mt-1 text-xs leading-5 text-text-tertiary">
-            Danh sách này lấy từ các môn gia sư đã đăng ký dạy và được nhân viên duyệt.
+            Danh sách này lấy từ môn gia sư đã đăng ký và được duyệt. Đây không phải lớp nhóm có sẵn.
           </p>
         </div>
 
@@ -1809,7 +1819,7 @@ function SendRequestModal({
               type="number"
               min={1}
               value={requestedSessions}
-              onChange={(e) => setRequestedSessions(Number(e.target.value))}
+              onChange={(e) => setRequestedSessions(Math.max(Number(e.target.value), 1))}
               required
             />
           </div>
@@ -1823,17 +1833,17 @@ function SendRequestModal({
         </div>
 
         <div>
-          <label className="block text-sm font-bold text-text-secondary mb-1">Mục tiêu học tập của bạn</label>
+          <label className="block text-sm font-bold text-text-secondary mb-1">Nội dung muốn trao đổi với gia sư</label>
           <Textarea
             rows={4}
-            placeholder="Mô tả chi tiết mục tiêu của bạn để gia sư chuẩn bị tốt hơn..."
+            placeholder={`VD: Mình muốn học 1-1 ${subjectSummary}, cần trao đổi lịch học, mục tiêu và mức học phí phù hợp.`}
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
           />
         </div>
 
         <div className="rounded-lg border border-border-light bg-surface-secondary p-3 text-sm leading-6 text-text-secondary">
-          Hệ thống chỉ tạo khoản thanh toán sau khi gia sư xác nhận yêu cầu. Số tiền tạm tính bằng học phí mỗi buổi nhân với số buổi dự kiến.
+          Đơn giá tham khảo: <strong>{toCurrency(feePerSession)}/buổi</strong>. Tạm tính {requestedSessions || 0} buổi là <strong>{toCurrency(estimatedTotal)}</strong>. Hệ thống chỉ tạo khoản thanh toán sau khi gia sư xác nhận yêu cầu.
         </div>
       </form>
     </Modal>

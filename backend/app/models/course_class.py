@@ -12,6 +12,9 @@ class CourseClass(Base, TimestampMixin):
     __tablename__ = "course_classes"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    private_request_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("private_tutoring_requests.id")
+    )
     subject_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("subjects.id"), nullable=False)
     primary_tutor_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("tutor_profiles.id")
