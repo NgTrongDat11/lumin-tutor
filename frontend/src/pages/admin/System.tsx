@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { adminApi } from '../../services/api';
 import type { AdminStatsResponse } from '../../types';
-import { PageLoading } from '../../components/ui/Spinner';
+import { FormSkeleton } from '../../components/ui/Skeleton';
 import { PortalPage, SectionPanel } from '../../components/portal/PortalPage';
 
 const emptyStats: AdminStatsResponse = {
@@ -30,9 +30,9 @@ async function checkHealth(): Promise<HealthStatus> {
   try {
     const res = await fetch('/api/v1/health');
     const latency = Math.round(performance.now() - start);
-    if (!res.ok) return { ok: false, message: `HTTP ${res.status}`, latency };
+    if (!res.ok) return { ok: false, message: `Lỗi HTTP ${res.status}`, latency };
     const data = await res.json();
-    return { ok: data.status === 'ok', message: data.message || 'OK', latency };
+    return { ok: data.status === 'ok', message: data.message || 'Ổn định', latency };
   } catch {
     const latency = Math.round(performance.now() - start);
     return { ok: false, message: 'Không kết nối được', latency };
@@ -64,10 +64,10 @@ function InfoRow({ label, value, mono }: { label: string; value: string | number
 /* ── Permissions matrix ──────────────────────────── */
 
 const permissionsData = [
-  { role: 'SUPER_ADMIN', color: 'bg-danger-500', perms: 'Quản lý staff · Audit log · Thống kê · Cấu hình · Truy cập vận hành' },
-  { role: 'STAFF', color: 'bg-warning-500', perms: 'Duyệt gia sư · Quản lý học viên · Lớp · Lịch · Hợp đồng · Thanh toán' },
-  { role: 'TUTOR', color: 'bg-success-500', perms: 'Hồ sơ · Môn dạy · Lịch rảnh · Lớp/yêu cầu đã nhận' },
-  { role: 'STUDENT', color: 'bg-primary-500', perms: 'Nhu cầu học · Gợi ý · Đăng ký lớp · Thanh toán · Đánh giá' },
+  { role: 'Quản trị viên', color: 'bg-danger-500', perms: 'Quản lý nhân viên · Nhật ký hệ thống · Thống kê · Cấu hình · Truy cập vận hành' },
+  { role: 'Nhân viên', color: 'bg-warning-500', perms: 'Duyệt gia sư · Quản lý học viên · Lớp · Lịch · Hợp đồng · Thanh toán' },
+  { role: 'Gia sư', color: 'bg-success-500', perms: 'Hồ sơ · Môn dạy · Lịch rảnh · Lớp/yêu cầu đã nhận' },
+  { role: 'Học viên', color: 'bg-primary-500', perms: 'Nhu cầu học · Gợi ý · Đăng ký lớp · Thanh toán · Đánh giá' },
 ];
 
 /* ── Main ────────────────────────────────────────── */
@@ -88,7 +88,7 @@ export default function AdminSystem() {
     });
   }, []);
 
-  if (loading) return <PageLoading />;
+  if (loading) return <FormSkeleton />;
 
   const activeClasses = (stats.classes_by_status.READY || 0) + (stats.classes_by_status.ONGOING || 0);
   const totalClasses = Object.values(stats.classes_by_status).reduce((a, b) => a + b, 0);
@@ -106,7 +106,7 @@ export default function AdminSystem() {
             <div className="flex items-center justify-between gap-4 py-3">
               <div className="flex items-center gap-3">
                 <StatusDot ok={health?.ok ?? false} />
-                <span className="text-sm font-semibold text-text-primary">API Server</span>
+                <span className="text-sm font-semibold text-text-primary">Máy chủ API</span>
               </div>
               <div className="text-right">
                 <span className={`text-sm font-semibold ${health?.ok ? 'text-success-700' : 'text-danger-600'}`}>
@@ -119,16 +119,16 @@ export default function AdminSystem() {
             </div>
 
             <InfoRow label="Tổng tài khoản" value={stats.total_users} />
-            <InfoRow label="Staff hoạt động" value={`${stats.active_staff} active · ${stats.suspended_staff} khóa`} />
-            <InfoRow label="Tổng lớp" value={`${totalClasses} (${activeClasses} active)`} />
+            <InfoRow label="Nhân viên hoạt động" value={`${stats.active_staff} đang hoạt động · ${stats.suspended_staff} bị khóa`} />
+            <InfoRow label="Tổng lớp" value={`${totalClasses} (${activeClasses} đang mở)`} />
             <InfoRow label="Gia sư chờ duyệt" value={stats.pending_tutors} />
-            <InfoRow label="Audit log entries" value={stats.audit_log_count} />
+            <InfoRow label="Mục nhật ký hệ thống" value={stats.audit_log_count} />
             <InfoRow label="Giao dịch thành công" value={`${stats.paid_revenue.toLocaleString('vi-VN')}đ`} mono />
           </div>
         </SectionPanel>
 
         {/* Permissions matrix */}
-        <SectionPanel title="Ma trận quyền" description="Phân quyền hiện tại dựa trên role.">
+        <SectionPanel title="Ma trận quyền" description="Phân quyền hiện tại theo vai trò.">
           <div className="space-y-3">
             {permissionsData.map((item) => (
               <div key={item.role} className="rounded-lg border border-border-light bg-white p-4">
@@ -145,7 +145,7 @@ export default function AdminSystem() {
           <div className="mt-4 rounded-lg border border-dashed border-border bg-surface-secondary p-3">
             <p className="text-xs leading-5 text-text-tertiary">
               <span className="font-semibold text-text-secondary">Hướng mở rộng:</span>{' '}
-              Permission chi tiết cho staff, cấu hình tỷ lệ hoa hồng qua DB, quy tắc duyệt gia sư tự động.
+              Phân quyền chi tiết cho nhân viên, cấu hình tỷ lệ hoa hồng qua cơ sở dữ liệu, quy tắc duyệt gia sư tự động.
             </p>
           </div>
         </SectionPanel>

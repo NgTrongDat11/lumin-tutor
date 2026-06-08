@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { adminApi } from '../../services/api';
 import type { AdminStatsResponse } from '../../types';
-import { PageLoading } from '../../components/ui/Spinner';
+import { DashboardSkeleton } from '../../components/ui/Skeleton';
 import { ArrowRightIcon, ClipboardCheckIcon, LayersIcon, UsersIcon, WalletIcon } from '../../components/ui/Icons';
 import { MetricTile, PortalPage, SectionPanel } from '../../components/portal/PortalPage';
 import Button from '../../components/ui/Button';
@@ -29,8 +29,8 @@ const emptyStats: AdminStatsResponse = {
 const roleConfig: { key: string; label: string; color: string }[] = [
   { key: 'STUDENT', label: 'Học viên', color: 'bg-primary-500' },
   { key: 'TUTOR', label: 'Gia sư', color: 'bg-success-500' },
-  { key: 'STAFF', label: 'Staff', color: 'bg-warning-500' },
-  { key: 'SUPER_ADMIN', label: 'Admin', color: 'bg-danger-500' },
+  { key: 'STAFF', label: 'Nhân viên', color: 'bg-warning-500' },
+  { key: 'SUPER_ADMIN', label: 'Quản trị viên', color: 'bg-danger-500' },
 ];
 
 function RoleDistributionBar({ byRole, total }: { byRole: Partial<Record<string, number>>; total: number }) {
@@ -181,7 +181,7 @@ export default function AdminDashboard() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <PageLoading />;
+  if (loading) return <DashboardSkeleton />;
 
   const activeClasses = (stats.classes_by_status.READY || 0) + (stats.classes_by_status.ONGOING || 0);
 
@@ -190,17 +190,17 @@ export default function AdminDashboard() {
     stats.pending_tutors > 0 && { label: 'Gia sư cần duyệt', value: stats.pending_tutors, hint: 'Vào Gia sư để xử lý.', href: '/staff/tutors', tone: 'warning' as const },
     stats.pending_contracts > 0 && { label: 'Hợp đồng chờ', value: stats.pending_contracts, hint: 'Vào Lịch & hợp đồng.', href: '/staff/operations', tone: 'warning' as const },
     stats.payment_queue > 0 && { label: 'Giao dịch chờ', value: stats.payment_queue, hint: 'Vào Tài chính.', href: '/staff/payments', tone: 'warning' as const },
-    stats.suspended_staff > 0 && { label: 'Staff bị khóa', value: stats.suspended_staff, hint: 'Kiểm tra quyền vận hành.', href: '/admin/staff', tone: 'danger' as const },
+    stats.suspended_staff > 0 && { label: 'Nhân viên bị khóa', value: stats.suspended_staff, hint: 'Kiểm tra quyền vận hành.', href: '/admin/staff', tone: 'danger' as const },
   ].filter(Boolean) as AlertItem[];
 
   return (
     <PortalPage
-      title="Tổng quan admin"
+      title="Tổng quan quản trị"
       description="Sức khỏe hệ thống và các cảnh báo cần xử lý."
       actions={(
         <Link to="/admin/staff">
           <Button>
-            Quản lý staff <ArrowRightIcon className="h-4 w-4" />
+            Quản lý nhân viên <ArrowRightIcon className="h-4 w-4" />
           </Button>
         </Link>
       )}
@@ -208,9 +208,9 @@ export default function AdminDashboard() {
       {/* Hero metrics */}
       <div className="grid gap-4 md:grid-cols-4">
         <MetricTile icon={WalletIcon} label="Doanh thu" value={currency(stats.paid_revenue)} hint="Giao dịch thành công." tone="success" />
-        <MetricTile icon={LayersIcon} label="Lớp active" value={activeClasses} hint="READY + ONGOING." />
-        <MetricTile icon={UsersIcon} label="Staff" value={stats.active_staff} hint={`${stats.suspended_staff} bị khóa.`} href="/admin/staff" tone="neutral" />
-        <MetricTile icon={ClipboardCheckIcon} label="Audit log" value={stats.audit_log_count} hint="Thao tác nhạy cảm." href="/admin/audit" tone="primary" />
+        <MetricTile icon={LayersIcon} label="Lớp đang mở" value={activeClasses} hint="Sẵn sàng hoặc đang học." />
+        <MetricTile icon={UsersIcon} label="Nhân viên" value={stats.active_staff} hint={`${stats.suspended_staff} bị khóa.`} href="/admin/staff" tone="neutral" />
+        <MetricTile icon={ClipboardCheckIcon} label="Nhật ký hệ thống" value={stats.audit_log_count} hint="Thao tác nhạy cảm." href="/admin/audit" tone="primary" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
@@ -242,7 +242,7 @@ export default function AdminDashboard() {
             {/* Quick links */}
             <div className="mt-5 flex flex-wrap gap-2 border-t border-border-light pt-4">
               {[
-                { label: 'Quản lý staff', href: '/admin/staff' },
+                { label: 'Quản lý nhân viên', href: '/admin/staff' },
                 { label: 'Nhật ký', href: '/admin/audit' },
                 { label: 'Hệ thống', href: '/admin/system' },
               ].map((link) => (

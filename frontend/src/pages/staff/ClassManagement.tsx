@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+﻿import { useEffect, useState, type FormEvent } from 'react';
 import { classApi, subjectApi } from '../../services/api';
 import type { CourseClassResponse, SubjectResponse, TutorApplicationResponse, ClassRegistrationResponse } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -10,7 +10,7 @@ import Textarea from '../../components/ui/Textarea';
 import Modal from '../../components/ui/Modal';
 import { getStatusBadge } from '../../components/ui/Badge';
 import EmptyState from '../../components/ui/EmptyState';
-import { PageLoading } from '../../components/ui/Spinner';
+import { CardGridSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 
 export default function StaffClassManagement() {
@@ -34,7 +34,7 @@ export default function StaffClassManagement() {
     } catch { toast('error', 'Cập nhật thất bại'); }
   };
 
-  if (loading) return <PageLoading />;
+  if (loading) return <CardGridSkeleton />;
 
   return (
     <div className="animate-slide-up">

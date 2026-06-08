@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
-import { classApi, privateRequestApi } from '../../services/api';
+﻿import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { classApi, extractErrorMessage, messageApi, privateRequestApi } from '../../services/api';
 import type { CourseClassResponse, PrivateRequestResponse } from '../../types';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 import { getStatusBadge } from '../../components/ui/Badge';
-import { PageLoading } from '../../components/ui/Spinner';
+import { DashboardSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 import { ClipboardCheckIcon, LayersIcon, UsersIcon, WalletIcon } from '../../components/ui/Icons';
 import { EmptyPanel, MetricTile, PortalPage, SectionPanel, SegmentedTabs } from '../../components/portal/PortalPage';
@@ -17,6 +18,7 @@ function currency(value: string | number | null | undefined) {
 }
 
 export default function TutorOpportunities({ initialTab = 'requests' }: { initialTab?: OpportunityTab }) {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<OpportunityTab>(initialTab);
   const [requests, setRequests] = useState<PrivateRequestResponse[]>([]);
   const [classes, setClasses] = useState<CourseClassResponse[]>([]);
@@ -61,12 +63,24 @@ export default function TutorOpportunities({ initialTab = 'requests' }: { initia
     }
   };
 
+  const handleOpenRequestThread = async (request: PrivateRequestResponse) => {
+    try {
+      const thread = await messageApi.ensureThread({
+        private_request_id: request.id,
+        title: `Yêu cầu 1-1${request.student_name ? ` - ${request.student_name}` : ''}`,
+      });
+      navigate(`/tutor/messages?threadId=${thread.id}`);
+    } catch (err) {
+      toast('error', extractErrorMessage(err));
+    }
+  };
+
   const pendingRequests = useMemo(() => requests.filter((request) => request.status === 'SENT'), [requests]);
   const activeRequests = useMemo(() => requests.filter((request) => ['TUTOR_CONFIRMED', 'PAID', 'ONGOING'].includes(request.status)), [requests]);
   const historyRequests = useMemo(() => requests.filter((request) => request.status !== 'SENT'), [requests]);
   const recruitingClasses = useMemo(() => classes.filter((course) => course.status === 'TUTOR_RECRUITING'), [classes]);
 
-  if (loading) return <PageLoading />;
+  if (loading) return <DashboardSkeleton />;
 
   return (
     <PortalPage
@@ -99,17 +113,38 @@ export default function TutorOpportunities({ initialTab = 'requests' }: { initia
               {pendingRequests.map((request) => (
                 <article key={request.id} className="rounded-lg border border-border-light bg-white p-4">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-semibold text-text-primary">Yêu cầu #{request.id}</h3>
+                        <h3 className="font-semibold text-text-primary">
+                          {request.student_name || `Học viên #${request.student_account_id}`}
+                        </h3>
                         {getStatusBadge(request.status)}
                       </div>
-                      <p className="mt-1 text-sm text-text-secondary">
-                        {request.grade_level} · {request.requested_sessions} buổi · {request.mode === 'ONLINE' ? 'Online' : 'Trực tiếp'}
-                      </p>
-                      {request.goal && <p className="mt-3 max-w-3xl text-sm leading-6 text-text-secondary">{request.goal}</p>}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {request.subject_name && (
+                          <span className="rounded-full border border-primary-200 bg-primary-50 px-2.5 py-1 text-xs font-bold text-primary-700">
+                            {request.subject_name}
+                          </span>
+                        )}
+                        <span className="rounded-full border border-border-light bg-surface-secondary px-2.5 py-1 text-xs font-semibold text-text-secondary">
+                          {request.grade_level}
+                        </span>
+                        <span className="rounded-full border border-border-light bg-surface-secondary px-2.5 py-1 text-xs font-semibold text-text-secondary">
+                          {request.requested_sessions} buổi
+                        </span>
+                        <span className="rounded-full border border-border-light bg-surface-secondary px-2.5 py-1 text-xs font-semibold text-text-secondary">
+                          {request.mode === 'ONLINE' ? '🌐 Trực tuyến' : '📍 Trực tiếp'}
+                        </span>
+                      </div>
+                      {request.goal && (
+                        <div className="mt-3 rounded-lg border border-border-light bg-surface-secondary p-3">
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-text-tertiary mb-1">Mục tiêu học tập</p>
+                          <p className="text-sm leading-6 text-text-secondary">{request.goal}</p>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-2 lg:shrink-0">
+                      <Button size="sm" variant="outline" onClick={() => handleOpenRequestThread(request)}>Trao đổi</Button>
                       <Button size="sm" onClick={() => setConfirmId(request.id)}>Xác nhận</Button>
                       <Button size="sm" variant="outline" className="text-danger-600 hover:bg-danger-50" onClick={() => handleReject(request.id)}>Từ chối</Button>
                     </div>
@@ -124,7 +159,7 @@ export default function TutorOpportunities({ initialTab = 'requests' }: { initia
       {activeTab === 'classes' && (
         <SectionPanel title="Lớp nhóm đang tuyển gia sư" description="Các lớp này cần gia sư chính trước khi mở hoặc tiếp tục tuyển học viên.">
           {recruitingClasses.length === 0 ? (
-            <EmptyPanel title="Chưa có lớp đang tuyển" description="Khi staff mở tuyển gia sư cho lớp nhóm, lớp sẽ xuất hiện ở đây." />
+            <EmptyPanel title="Chưa có lớp đang tuyển" description="Khi nhân viên mở tuyển gia sư cho lớp nhóm, lớp sẽ xuất hiện ở đây." />
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
               {recruitingClasses.map((course) => (
@@ -139,7 +174,7 @@ export default function TutorOpportunities({ initialTab = 'requests' }: { initia
                         {course.grade_level} · {course.total_sessions} buổi · {currency(course.fee_per_session_per_student)}/HV
                       </p>
                       <p className="mt-1 text-xs text-text-tertiary">
-                        {course.mode === 'ONLINE' ? 'Online' : course.location || 'Trực tiếp'} · {course.min_students}-{course.max_students} học viên
+                        {course.mode === 'ONLINE' ? 'Trực tuyến' : course.location || 'Trực tiếp'} · {course.min_students}-{course.max_students} học viên
                       </p>
                     </div>
                   </div>
@@ -163,16 +198,26 @@ export default function TutorOpportunities({ initialTab = 'requests' }: { initia
               {historyRequests.map((request) => (
                 <article key={request.id} className="rounded-lg border border-border-light bg-white p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
+                    <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="font-semibold text-text-primary">Yêu cầu #{request.id}</h3>
+                        <h3 className="font-semibold text-text-primary">
+                          {request.student_name || `Học viên #${request.student_account_id}`}
+                        </h3>
+                        {request.subject_name && (
+                          <span className="rounded-full border border-primary-200 bg-primary-50 px-2 py-0.5 text-xs font-bold text-primary-700">
+                            {request.subject_name}
+                          </span>
+                        )}
                         {getStatusBadge(request.status)}
                       </div>
                       <p className="mt-1 text-sm text-text-secondary">
                         {request.requested_sessions} buổi{request.agreed_fee_per_session ? ` · ${currency(request.agreed_fee_per_session)}/buổi` : ''}
                       </p>
                     </div>
-                    <p className="text-xs text-text-tertiary">{request.confirmed_at ? new Date(request.confirmed_at).toLocaleDateString('vi-VN') : 'Chưa xác nhận'}</p>
+                    <div className="flex items-center gap-3">
+                      <p className="text-xs text-text-tertiary">{request.confirmed_at ? new Date(request.confirmed_at).toLocaleDateString('vi-VN') : 'Chưa xác nhận'}</p>
+                      <Button size="sm" variant="outline" onClick={() => handleOpenRequestThread(request)}>Trao đổi</Button>
+                    </div>
                   </div>
                 </article>
               ))}
@@ -220,6 +265,9 @@ function ConfirmRequestModal({ requestId, onClose, onConfirmed, toast }: { reque
       <div className="space-y-4">
         <Input label="Học phí thỏa thuận (VNĐ/buổi)" type="number" placeholder="200000" value={fee} onChange={(event) => setFee(event.target.value)} required />
         <Input label="Ghi chú cho học viên" placeholder="VD: Có thể bắt đầu từ tuần sau" value={note} onChange={(event) => setNote(event.target.value)} />
+        <div className="rounded-lg border border-warning-100 bg-warning-50 p-3 text-sm leading-6 text-warning-800">
+          Đây là học phí mỗi buổi. Khoản thanh toán ban đầu sẽ bằng mức này nhân với số buổi học viên yêu cầu.
+        </div>
       </div>
     </Modal>
   );

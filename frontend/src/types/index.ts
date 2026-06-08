@@ -22,6 +22,45 @@ export interface ChatSendResponse {
   created_at: string;
 }
 
+export interface MessageParticipantResponse {
+  account_id: number;
+  full_name: string;
+  role: UserRole;
+}
+
+export interface MessageResponse {
+  id: number;
+  thread_id: number;
+  sender_id: number;
+  sender_name: string | null;
+  content: string;
+  created_at: string;
+  is_mine: boolean;
+}
+
+export interface MessageThreadResponse {
+  id: number;
+  private_request_id: number | null;
+  class_id: number | null;
+  class_registration_id: number | null;
+  title: string | null;
+  status: string;
+  participants: MessageParticipantResponse[];
+  last_message: MessageResponse | null;
+  messages: MessageResponse[];
+  unread_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MessageThreadEnsureRequest {
+  private_request_id?: number;
+  class_id?: number;
+  class_registration_id?: number;
+  support?: boolean;
+  title?: string;
+}
+
 /* ── Auth ──────────────────────────────────────────── */
 export interface LoginRequest {
   email: string;

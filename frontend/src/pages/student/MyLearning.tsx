@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { classApi, paymentApi, privateRequestApi, scheduleApi } from '../../services/api';
+import { classApi, extractErrorMessage, messageApi, paymentApi, privateRequestApi, scheduleApi } from '../../services/api';
 import type { ClassRegistrationResponse, LearningSessionResponse, PaymentResponse, PrivateRequestResponse } from '../../types';
 import { EmptyPanel, PortalPage, SegmentedTabs } from '../../components/portal/PortalPage';
 import { getStatusBadge } from '../../components/ui/Badge';
-import { PageLoading } from '../../components/ui/Spinner';
+import { CardGridSkeleton } from '../../components/ui/Skeleton';
 import Button from '../../components/ui/Button';
 import Avatar from '../../components/ui/Avatar';
 import { BookOpenIcon, CalendarIcon, CheckCircleIcon, ClockIcon, UsersIcon, WalletIcon, XIcon } from '../../components/ui/Icons';
@@ -145,7 +145,20 @@ export default function StudentMyLearning() {
     navigate('/student/payments');
   }, [navigate]);
 
-  if (loading) return <PageLoading />;
+  const handleOpenMessages = async (item: UnifiedLearningItem) => {
+    try {
+      const thread = await messageApi.ensureThread(
+        item.type === 'PRIVATE'
+          ? { private_request_id: item.id, title: item.title }
+          : { class_registration_id: item.paymentTargetId, title: item.title },
+      );
+      navigate(`/student/messages?threadId=${thread.id}`);
+    } catch (err) {
+      toast('error', extractErrorMessage(err));
+    }
+  };
+
+  if (loading) return <CardGridSkeleton />;
 
   const visibleCount = activeTab === 'ACTIVE'
     ? primaryActiveItems.length + waitingRequestItems.length
@@ -153,8 +166,8 @@ export default function StudentMyLearning() {
 
   return (
     <PortalPage
-      title="Lớp của tôi"
-      description="Theo dõi lớp đang học, tiến trình từng buổi và các yêu cầu học 1-1 trong cùng một nơi."
+      title="Việc học của tôi"
+      description="Theo dõi lớp nhóm đang học, tiến trình từng buổi và các yêu cầu học 1-1 trong cùng một nơi."
     >
       <div className="space-y-4 md:space-y-5">
         <SegmentedTabs
@@ -185,6 +198,7 @@ export default function StudentMyLearning() {
             onToggle={(key) => setExpandedKey(expandedKey === key ? null : key)}
             onSchedule={(session) => navigate(session ? `/student/schedule?sessionId=${session.id}` : '/student/schedule')}
             onPayNow={(item) => handlePayNow(item.paymentTargetType, item.paymentTargetId)}
+            onMessage={handleOpenMessages}
             onExplore={() => navigate('/student')}
           />
         ) : (
@@ -192,6 +206,7 @@ export default function StudentMyLearning() {
             items={filteredCompletedItems}
             expandedKey={expandedKey}
             onToggle={(key) => setExpandedKey(expandedKey === key ? null : key)}
+            onMessage={handleOpenMessages}
           />
         )}
       </div>
@@ -214,6 +229,7 @@ function ActiveLearningView({
   onToggle,
   onSchedule,
   onPayNow,
+  onMessage,
   onExplore,
 }: {
   primaryItems: UnifiedLearningItem[];
@@ -223,13 +239,14 @@ function ActiveLearningView({
   onToggle: (key: string) => void;
   onSchedule: (session?: LearningSessionResponse) => void;
   onPayNow: (item: UnifiedLearningItem) => void;
+  onMessage: (item: UnifiedLearningItem) => void;
   onExplore: () => void;
 }) {
   if (primaryItems.length === 0 && waitingItems.length === 0) {
     return (
       <EmptyPanel
         title="Chưa có lớp đang học"
-        description="Các lớp nhóm, lớp 1-1 và yêu cầu đang chờ sẽ xuất hiện tại đây."
+        description="Các lớp nhóm, yêu cầu học 1-1 và yêu cầu đang chờ sẽ xuất hiện tại đây."
         action={<Button onClick={onExplore}>Khám phá lớp học</Button>}
       />
     );
@@ -248,6 +265,7 @@ function ActiveLearningView({
               onToggle={() => onToggle(item.key)}
               onSchedule={onSchedule}
               onPayNow={() => onPayNow(item)}
+              onMessage={() => onMessage(item)}
             />
           ))}
         </div>
@@ -258,7 +276,7 @@ function ActiveLearningView({
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-sm font-semibold text-text-primary">Yêu cầu đang chờ</h2>
-              <p className="mt-0.5 text-xs text-text-tertiary">Các yêu cầu 1-1 chưa trở thành lớp học chính thức.</p>
+              <p className="mt-0.5 text-xs text-text-tertiary">Các yêu cầu 1-1 đang chờ gia sư phản hồi hoặc cần trao đổi thêm.</p>
             </div>
             <span className="rounded-full bg-surface-tertiary px-2.5 py-1 text-xs font-semibold text-text-secondary">
               {waitingItems.length}
@@ -275,6 +293,7 @@ function ActiveLearningView({
                 onToggle={() => onToggle(item.key)}
                 onSchedule={onSchedule}
                 onPayNow={() => onPayNow(item)}
+                onMessage={() => onMessage(item)}
               />
             ))}
           </div>
@@ -288,10 +307,12 @@ function CompletedLearningView({
   items,
   expandedKey,
   onToggle,
+  onMessage,
 }: {
   items: UnifiedLearningItem[];
   expandedKey: string | null;
   onToggle: (key: string) => void;
+  onMessage: (item: UnifiedLearningItem) => void;
 }) {
   if (items.length === 0) {
     return (
@@ -311,6 +332,7 @@ function CompletedLearningView({
           expanded={expandedKey === item.key}
           completed
           onToggle={() => onToggle(item.key)}
+          onMessage={() => onMessage(item)}
         />
       ))}
     </div>
@@ -326,6 +348,7 @@ function LearningCard({
   onToggle,
   onSchedule,
   onPayNow,
+  onMessage,
 }: {
   item: UnifiedLearningItem;
   expanded: boolean;
@@ -335,6 +358,7 @@ function LearningCard({
   onToggle: () => void;
   onSchedule?: (session?: LearningSessionResponse) => void;
   onPayNow?: () => void;
+  onMessage?: () => void;
 }) {
   const metrics = getItemMetrics(item);
   const sortedSessions = getSortedSessions(item.sessions);
@@ -447,15 +471,24 @@ function LearningCard({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onToggle}
-            className="inline-flex w-full shrink-0 items-center justify-center rounded-lg border border-border-light px-3 py-2 text-xs font-semibold text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-            disabled={!showTimeline}
-            aria-expanded={expanded}
-          >
-            {showTimeline ? (expanded ? 'Ẩn buổi học' : 'Xem buổi học') : 'Chưa có buổi'}
-          </button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <button
+              type="button"
+              onClick={onMessage}
+              className="inline-flex w-full shrink-0 items-center justify-center rounded-lg border border-primary-100 bg-primary-50 px-3 py-2 text-xs font-semibold text-primary-700 transition-colors hover:bg-primary-100 sm:w-auto"
+            >
+              Tin nhắn
+            </button>
+            <button
+              type="button"
+              onClick={onToggle}
+              className="inline-flex w-full shrink-0 items-center justify-center rounded-lg border border-border-light px-3 py-2 text-xs font-semibold text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+              disabled={!showTimeline}
+              aria-expanded={expanded}
+            >
+              {showTimeline ? (expanded ? 'Ẩn buổi học' : 'Xem buổi học') : 'Chưa có buổi'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -732,7 +765,7 @@ function getProgressPct(metrics: LearningMetrics) {
 function getNoNextSessionText(item: UnifiedLearningItem) {
   if (item.status === 'SENT') return 'Đã gửi yêu cầu, chờ gia sư phản hồi';
   if (item.status === 'TUTOR_REJECTED') return 'Gia sư đã từ chối yêu cầu';
-  if (item.status === 'PENDING') return 'Đang chờ staff duyệt đăng ký';
+  if (item.status === 'PENDING') return 'Đang chờ nhân viên duyệt đăng ký';
   if (item.status === 'APPROVED' || item.status === 'TUTOR_CONFIRMED') return 'Lịch học sẽ hiển thị sau khi thanh toán';
   if (item.status === 'COMPLETED') return 'Lớp học đã hoàn thành';
   return item.sessions.length > 0 ? 'Chưa có buổi học sắp tới' : 'Chưa có lịch học';

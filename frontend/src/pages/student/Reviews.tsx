@@ -1,9 +1,9 @@
-import { useEffect, useState, useMemo } from 'react';
+﻿import { useEffect, useState, useMemo } from 'react';
 import { privateRequestApi, reviewApi, scheduleApi } from '../../services/api';
 import type { PrivateRequestResponse, ReviewCreate, ReviewResponse } from '../../types';
 import { PortalPage, SegmentedTabs, EmptyPanel } from '../../components/portal/PortalPage';
 import { getStatusBadge } from '../../components/ui/Badge';
-import { PageLoading } from '../../components/ui/Spinner';
+import { CardGridSkeleton } from '../../components/ui/Skeleton';
 import Button from '../../components/ui/Button';
 import Avatar from '../../components/ui/Avatar';
 import Textarea from '../../components/ui/Textarea';
@@ -140,7 +140,7 @@ export default function StudentReviews() {
     }
   };
 
-  if (loading) return <PageLoading />;
+  if (loading) return <CardGridSkeleton />;
 
   return (
     <PortalPage

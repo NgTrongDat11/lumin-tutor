@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { classApi, paymentApi, scheduleApi, staffApi } from '../../services/api';
 import type { CourseClassResponse, LearningSessionResponse, PaymentResponse, TutorPublicResponse } from '../../types';
 import Button from '../../components/ui/Button';
 import { getStatusBadge } from '../../components/ui/Badge';
-import { PageLoading } from '../../components/ui/Spinner';
+import { DashboardSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 import { ArrowRightIcon, CalendarIcon, LayersIcon, UserCheckIcon, WalletIcon } from '../../components/ui/Icons';
 import { EmptyPanel, MetricTile, PortalPage, SectionPanel } from '../../components/portal/PortalPage';
@@ -37,7 +37,7 @@ export default function StaffDashboard() {
 
   useEffect(load, []);
 
-  if (loading) return <PageLoading />;
+  if (loading) return <DashboardSkeleton />;
 
   const recruitingClasses = classes.filter((course) => ['DRAFT', 'TUTOR_RECRUITING', 'ENROLLING', 'READY'].includes(course.status));
   const paymentQueue = payments.filter((payment) => ['CREATED', 'PENDING', 'REFUND_PENDING'].includes(payment.status));
@@ -48,7 +48,7 @@ export default function StaffDashboard() {
 
   return (
     <PortalPage
-      title="Tổng quan staff"
+      title="Tổng quan vận hành"
       description="Hàng chờ công việc hàng ngày."
       actions={(
         <Link to="/staff/tutors">
@@ -61,7 +61,7 @@ export default function StaffDashboard() {
       {/* Hero metrics */}
       <div className="grid gap-4 md:grid-cols-4">
         <MetricTile icon={UserCheckIcon} label="Gia sư chờ duyệt" value={pendingTutors.length} hint="Cần xác minh." href="/staff/tutors" tone={pendingTutors.length > 0 ? 'warning' : 'success'} />
-        <MetricTile icon={LayersIcon} label="Lớp cần điều phối" value={recruitingClasses.length} hint="DRAFT → READY." href="/staff/classes" />
+        <MetricTile icon={LayersIcon} label="Lớp cần điều phối" value={recruitingClasses.length} hint="Từ bản nháp đến sẵn sàng mở lớp." href="/staff/classes" />
         <MetricTile icon={CalendarIcon} label="Buổi học hôm nay" value={sessionsToday.length} hint={`${scheduledSessions.length} buổi sắp tới.`} tone="neutral" />
         <MetricTile icon={WalletIcon} label="Thanh toán chờ" value={paymentQueue.length} hint="Cần kiểm tra." href="/staff/payments" tone="neutral" />
       </div>
@@ -85,7 +85,7 @@ export default function StaffDashboard() {
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-text-primary">{tutor.full_name}</p>
-                      <p className="text-xs text-text-tertiary">{tutor.years_experience} năm KN · {tutor.subjects.length} môn</p>
+                      <p className="text-xs text-text-tertiary">{tutor.years_experience} năm kinh nghiệm · {tutor.subjects.length} môn</p>
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">

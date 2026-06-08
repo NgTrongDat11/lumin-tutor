@@ -262,10 +262,6 @@ async def add_tutor_subject(
     ts = TutorSubject(tutor_id=profile.id, **body.model_dump())
     db.add(ts)
 
-    # BD-203: adding subject after verified → re-review
-    if profile.verification_status == "VERIFIED":
-        profile.verification_status = "PENDING_REVIEW"
-
     await db.commit()
     await db.refresh(ts)
     resp = TutorSubjectResponse.model_validate(ts)
@@ -328,6 +324,35 @@ async def add_availability(
     return ApiResponse(
         data=TutorAvailabilityResponse.model_validate(avail),
         message="Thêm lịch rảnh thành công.",
+    )
+
+
+@router.put("/availabilities/{avail_id}", response_model=ApiResponse, summary="Cập nhật lịch rảnh")
+async def update_availability(
+    avail_id: int,
+    body: AvailabilityCreate,
+    current_user: UserAccount = Depends(require_role("TUTOR")),
+    db: AsyncSession = Depends(get_db),
+):
+    profile = await _get_tutor_profile(current_user, db)
+    result = await db.execute(
+        select(TutorAvailability).where(
+            TutorAvailability.id == avail_id,
+            TutorAvailability.tutor_id == profile.id,
+        )
+    )
+    avail = result.scalar_one_or_none()
+    if not avail:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Không tìm thấy lịch rảnh.")
+
+    for key, value in body.model_dump().items():
+        setattr(avail, key, value)
+
+    await db.commit()
+    await db.refresh(avail)
+    return ApiResponse(
+        data=TutorAvailabilityResponse.model_validate(avail),
+        message="Cập nhật lịch rảnh thành công.",
     )
 
 

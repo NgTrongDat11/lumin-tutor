@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { staffApi } from '../../services/api';
 import type { TutorPublicResponse, TutorDetailResponse } from '../../types';
 import Button from '../../components/ui/Button';
@@ -6,13 +6,21 @@ import Modal from '../../components/ui/Modal';
 import Input from '../../components/ui/Input';
 import DocumentLink from '../../components/ui/DocumentLink';
 import { getStatusBadge } from '../../components/ui/Badge';
-import Spinner, { PageLoading } from '../../components/ui/Spinner';
+import Spinner from '../../components/ui/Spinner';
+import { TableSkeleton } from '../../components/ui/Skeleton';
 import EmptyState from '../../components/ui/EmptyState';
 import { useToast } from '../../components/ui/Toast';
 import { BookOpenIcon, CalendarIcon, SearchIcon, ShieldCheckIcon, UserCheckIcon } from '../../components/ui/Icons';
 import { MetricTile, PortalPage, SectionPanel } from '../../components/portal/PortalPage';
 
 type TutorFilter = 'ALL' | 'PENDING_REVIEW' | 'VERIFIED' | 'REJECTED';
+
+function teachingModeLabel(mode: string | null | undefined) {
+  if (mode === 'ONLINE') return 'Trực tuyến';
+  if (mode === 'OFFLINE') return 'Trực tiếp';
+  if (mode === 'BOTH') return 'Linh hoạt';
+  return 'Chưa rõ';
+}
 
 export default function StaffTutorVerification() {
   const [allTutors, setAllTutors] = useState<TutorPublicResponse[]>([]);
@@ -27,7 +35,7 @@ export default function StaffTutorVerification() {
   };
   useEffect(load, []);
 
-  if (loading) return <PageLoading />;
+  if (loading) return <TableSkeleton />;
 
   const pendingCount = allTutors.filter(t => t.verification_status === 'PENDING_REVIEW').length;
   const verifiedCount = allTutors.filter(t => t.verification_status === 'VERIFIED').length;
@@ -113,7 +121,7 @@ export default function StaffTutorVerification() {
                         )}
                       </div>
                       <p className="text-xs text-text-tertiary">
-                        {tutor.years_experience} năm KN · {tutor.teaching_mode === 'ONLINE' ? 'Online' : tutor.teaching_mode === 'OFFLINE' ? 'Trực tiếp' : 'Linh hoạt'}
+                        {tutor.years_experience} năm kinh nghiệm · {teachingModeLabel(tutor.teaching_mode)}
                         {tutor.subjects.length > 0 && ` · ${tutor.subjects.map(s => s.subject_name || `#${s.subject_id}`).slice(0, 3).join(', ')}`}
                         {tutor.subjects.length > 3 && ` +${tutor.subjects.length - 3}`}
                       </p>
@@ -280,7 +288,7 @@ export function TutorDetailModal({ tutor, onClose, onUpdated, toast }: { tutor: 
           <div className="grid grid-cols-2 gap-3 text-sm bg-surface-secondary p-3 rounded-lg">
             <div><span className="text-text-tertiary">Trình độ:</span> <span className="font-medium">{detail.profile.qualification_level || '—'}</span></div>
             <div><span className="text-text-tertiary">Kinh nghiệm:</span> <span className="font-medium">{detail.profile.years_experience} năm</span></div>
-            <div><span className="text-text-tertiary">Hình thức:</span> <span className="font-medium">{detail.profile.teaching_mode}</span></div>
+            <div><span className="text-text-tertiary">Hình thức:</span> <span className="font-medium">{teachingModeLabel(detail.profile.teaching_mode)}</span></div>
             <div><span className="text-text-tertiary">Khu vực:</span> <span className="font-medium">{detail.profile.teaching_area || '—'}</span></div>
           </div>
 
@@ -289,24 +297,28 @@ export function TutorDetailModal({ tutor, onClose, onUpdated, toast }: { tutor: 
             <h4 className="text-sm font-medium text-text-secondary mb-2">Chứng chỉ ({detail.qualifications.length})</h4>
             {detail.qualifications.length === 0 && <p className="text-sm text-text-tertiary italic">Chưa tải lên chứng chỉ nào.</p>}
             <div className="space-y-2">
-              {detail.qualifications.map((q) => (
-                <div key={q.id} className={`flex items-center justify-between gap-3 p-3 rounded-lg border ${q.status === 'PENDING' ? 'bg-warning-50/30 border-warning-200' : 'bg-surface-secondary border-border-light'}`}>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-text-primary truncate">{q.title}</span>
-                      {getStatusBadge(q.status)}
+              {detail.qualifications.map((q) => {
+                const hasEvidence = Boolean(q.file_url?.trim());
+                return (
+                  <div key={q.id} className={`flex items-center justify-between gap-3 p-3 rounded-lg border ${q.status === 'PENDING' ? 'bg-warning-50/30 border-warning-200' : 'bg-surface-secondary border-border-light'}`}>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-text-primary truncate">{q.title}</span>
+                        {getStatusBadge(q.status)}
+                      </div>
+                      <p className="text-xs text-text-secondary mt-0.5">{q.type} {q.issuer && `· ${q.issuer}`}</p>
+                      <DocumentLink fileUrl={q.file_url}>Xem tài liệu</DocumentLink>
+                      {!hasEvidence && <p className="mt-1 text-xs font-semibold text-danger-600">Thiếu minh chứng, chưa thể duyệt.</p>}
                     </div>
-                    <p className="text-xs text-text-secondary mt-0.5">{q.type} {q.issuer && `· ${q.issuer}`}</p>
-                    <DocumentLink fileUrl={q.file_url}>Xem tài liệu</DocumentLink>
+                    {q.status === 'PENDING' && isPending && (
+                      <div className="flex gap-1.5 shrink-0">
+                        <Button variant="outline" size="sm" className="text-xs py-1" disabled={!hasEvidence} onClick={() => handleReviewQualification(q.id, 'APPROVED')}>✓</Button>
+                        <Button variant="outline" size="sm" className="text-xs py-1 text-danger-600 hover:bg-danger-50 hover:border-danger-200" onClick={() => handleReviewQualification(q.id, 'REJECTED')}>✕</Button>
+                      </div>
+                    )}
                   </div>
-                  {q.status === 'PENDING' && isPending && (
-                    <div className="flex gap-1.5 shrink-0">
-                      <Button variant="outline" size="sm" className="text-xs py-1" onClick={() => handleReviewQualification(q.id, 'APPROVED')}>✓</Button>
-                      <Button variant="outline" size="sm" className="text-xs py-1 text-danger-600 hover:bg-danger-50 hover:border-danger-200" onClick={() => handleReviewQualification(q.id, 'REJECTED')}>✕</Button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

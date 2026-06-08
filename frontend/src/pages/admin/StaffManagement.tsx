@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+﻿import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { adminApi, extractErrorMessage } from '../../services/api';
 import type { AdminStaffResponse } from '../../types';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import { getStatusBadge } from '../../components/ui/Badge';
-import { PageLoading } from '../../components/ui/Spinner';
+import { TableSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 import { SearchIcon, ShieldCheckIcon, UsersIcon } from '../../components/ui/Icons';
 import { EmptyPanel, MetricTile, PortalPage, SectionPanel } from '../../components/portal/PortalPage';
@@ -157,7 +157,7 @@ export default function AdminStaffManagement() {
         const nextStatus = account.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
         const label = nextStatus === 'SUSPENDED' ? 'khóa' : 'mở khóa';
         await adminApi.updateStaffStatus(account.id, nextStatus);
-        toast('success', `Đã ${label} staff ${account.full_name}`);
+        toast('success', `Đã ${label} nhân viên ${account.full_name}`);
         load();
       } else {
         const result = await adminApi.resetStaffPassword(account.id);
@@ -181,31 +181,31 @@ export default function AdminStaffManagement() {
   const confirmDesc = confirmAction
     ? confirmAction.type === 'toggle'
       ? confirmAction.account.status === 'ACTIVE'
-        ? `Staff "${confirmAction.account.full_name}" sẽ không thể đăng nhập sau khi bị khóa.`
-        : `Mở khóa để staff "${confirmAction.account.full_name}" có thể đăng nhập lại.`
+        ? `Nhân viên "${confirmAction.account.full_name}" sẽ không thể đăng nhập sau khi bị khóa.`
+        : `Mở khóa để nhân viên "${confirmAction.account.full_name}" có thể đăng nhập lại.`
       : `Mật khẩu cũ của "${confirmAction.account.full_name}" sẽ bị hủy và thay bằng mật khẩu tạm mới.`
     : '';
 
   const confirmDanger = confirmAction?.type === 'toggle' && confirmAction.account.status === 'ACTIVE';
 
-  if (loading) return <PageLoading />;
+  if (loading) return <TableSkeleton />;
 
   return (
     <PortalPage
-      title="Quản lý staff"
+      title="Quản lý nhân viên"
       description="Tạo, khóa/mở và cấp lại mật khẩu tài khoản vận hành."
-      actions={<Button onClick={() => setShowCreate(true)}>+ Tạo staff</Button>}
+      actions={<Button onClick={() => setShowCreate(true)}>+ Tạo nhân viên</Button>}
     >
       {/* Metrics — chỉ hiện khi có đủ data */}
       {staff.length >= 2 && (
         <div className="grid gap-4 md:grid-cols-3">
-          <MetricTile icon={UsersIcon} label="Tổng staff" value={staff.length} hint="Tài khoản vận hành." tone="neutral" />
+          <MetricTile icon={UsersIcon} label="Tổng nhân viên" value={staff.length} hint="Tài khoản vận hành." tone="neutral" />
           <MetricTile icon={ShieldCheckIcon} label="Đang hoạt động" value={activeCount} hint="Có thể đăng nhập." tone="success" />
           <MetricTile icon={UsersIcon} label="Bị khóa" value={suspendedCount} hint="Không thể đăng nhập." tone={suspendedCount > 0 ? 'warning' : 'neutral'} />
         </div>
       )}
 
-      <SectionPanel title="Danh sách staff" description={`${staff.length} tài khoản.`}>
+      <SectionPanel title="Danh sách nhân viên" description={`${staff.length} tài khoản.`}>
         <div className="mb-4">
           <div className="relative max-w-sm">
             <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
@@ -220,7 +220,7 @@ export default function AdminStaffManagement() {
         </div>
 
         {filtered.length === 0 ? (
-          <EmptyPanel title="Không tìm thấy staff" description={search ? 'Thử từ khóa khác.' : 'Chưa có tài khoản staff nào.'} />
+          <EmptyPanel title="Không tìm thấy nhân viên" description={search ? 'Thử từ khóa khác.' : 'Chưa có tài khoản nhân viên nào.'} />
         ) : (
           <>
             {/* Desktop table */}
@@ -228,7 +228,7 @@ export default function AdminStaffManagement() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border-light text-left">
-                    <th className="px-4 py-3 font-semibold text-text-secondary">Staff</th>
+                    <th className="px-4 py-3 font-semibold text-text-secondary">Nhân viên</th>
                     <th className="px-4 py-3 font-semibold text-text-secondary">Email</th>
                     <th className="px-4 py-3 font-semibold text-text-secondary">SĐT</th>
                     <th className="px-4 py-3 font-semibold text-text-secondary">Ngày tạo</th>
@@ -338,7 +338,7 @@ export default function AdminStaffManagement() {
               <code className="select-all text-2xl font-bold tracking-widest text-primary-700">{resetResult.password}</code>
             </div>
             <p className="rounded-lg border border-warning-200 bg-warning-50 p-3 text-xs leading-5 text-warning-800">
-              Mật khẩu này chỉ hiển thị một lần. Staff nên đổi mật khẩu sau khi đăng nhập.
+              Mật khẩu này chỉ hiển thị một lần. Nhân viên nên đổi mật khẩu sau khi đăng nhập.
             </p>
           </div>
         </Modal>
@@ -365,7 +365,7 @@ function CreateStaffModal({ onClose, onCreated }: { onClose: () => void; onCreat
         password: form.password || undefined,
       };
       const result = await adminApi.createStaff(payload);
-      toast('success', `Đã tạo staff ${result.staff.full_name}`);
+      toast('success', `Đã tạo nhân viên ${result.staff.full_name}`);
       onCreated(result.staff.full_name, result.temp_password);
     } catch (err) {
       toast('error', extractErrorMessage(err));
@@ -378,11 +378,11 @@ function CreateStaffModal({ onClose, onCreated }: { onClose: () => void; onCreat
     <Modal
       open={true}
       onClose={onClose}
-      title="Tạo tài khoản staff"
+      title="Tạo tài khoản nhân viên"
       footer={(
         <>
           <Button variant="outline" onClick={onClose}>Hủy</Button>
-          <Button loading={saving} onClick={(event) => handleSubmit(event as unknown as FormEvent)}>Tạo staff</Button>
+          <Button loading={saving} onClick={(event) => handleSubmit(event as unknown as FormEvent)}>Tạo nhân viên</Button>
         </>
       )}
     >

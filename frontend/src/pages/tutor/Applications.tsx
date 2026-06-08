@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { classApi } from '../../services/api';
 import type { CourseClassResponse } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -6,7 +6,7 @@ import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { getStatusBadge } from '../../components/ui/Badge';
 import EmptyState from '../../components/ui/EmptyState';
-import { PageLoading } from '../../components/ui/Spinner';
+import { CardGridSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 
 export default function TutorApplications() {
@@ -23,7 +23,7 @@ export default function TutorApplications() {
     setApplying(classId);
     try {
       await classApi.apply(classId, { message: 'Tôi muốn ứng tuyển dạy lớp này.' });
-      toast('success', 'Ứng tuyển thành công! Chờ staff duyệt.');
+      toast('success', 'Ứng tuyển thành công! Chờ nhân viên duyệt.');
     } catch {
       toast('error', 'Ứng tuyển thất bại. Có thể bạn đã ứng tuyển rồi.');
     } finally {
@@ -31,7 +31,7 @@ export default function TutorApplications() {
     }
   };
 
-  if (loading) return <PageLoading />;
+  if (loading) return <CardGridSkeleton />;
 
   const recruiting = classes.filter((c) => c.status === 'TUTOR_RECRUITING');
 

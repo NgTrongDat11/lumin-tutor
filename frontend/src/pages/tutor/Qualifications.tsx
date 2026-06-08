@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+﻿import { useEffect, useState, type FormEvent } from 'react';
 import { tutorApi } from '../../services/api';
 import type { QualificationResponse, QualificationCreate } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -9,7 +9,7 @@ import Select from '../../components/ui/Select';
 import Modal from '../../components/ui/Modal';
 import DocumentLink from '../../components/ui/DocumentLink';
 import EmptyState from '../../components/ui/EmptyState';
-import { PageLoading } from '../../components/ui/Spinner';
+import { FormSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 
 export default function TutorQualifications() {
@@ -32,7 +32,7 @@ export default function TutorQualifications() {
     } catch { toast('error', 'Xoá thất bại'); }
   };
 
-  if (loading) return <PageLoading />;
+  if (loading) return <FormSkeleton />;
 
   return (
     <div className="animate-slide-up">

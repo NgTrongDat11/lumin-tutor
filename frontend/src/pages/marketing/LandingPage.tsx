@@ -31,11 +31,11 @@ const tutorCards = [
 
 const classCards = [
   { title: 'Lớp Toán nền tảng', meta: 'Tối 2-4-6 · 6 học viên', tone: 'emerald' },
-  { title: 'IELTS Speaking Lab', meta: 'Online · nhóm nhỏ', tone: 'amber' },
+  { title: 'IELTS Speaking Lab', meta: 'Trực tuyến · nhóm nhỏ', tone: 'amber' },
 ];
 
 const tutorBenefits: { icon: IconType; title: string; desc: string }[] = [
-  { icon: UserCheckIcon, title: 'Hồ sơ có thể trình bày', desc: 'Bio, môn dạy, học phí, chứng chỉ và rating được đóng gói thành profile đáng tin.' },
+  { icon: UserCheckIcon, title: 'Hồ sơ có thể trình bày', desc: 'Giới thiệu, môn dạy, học phí, chứng chỉ và đánh giá được đóng gói thành hồ sơ đáng tin.' },
   { icon: CalendarIcon, title: 'Lịch và cơ hội rõ ràng', desc: 'Lớp đang tuyển và yêu cầu 1-1 nổi bật theo khả năng nhận việc.' },
   { icon: BookOpenIcon, title: 'Không gian phát triển', desc: 'Gia sư biết cần bổ sung gì để được duyệt và xuất hiện trong gợi ý.' },
 ];
@@ -113,7 +113,7 @@ export default function LandingPage() {
                 </div>
                 <div>
                   <p className="text-3xl font-semibold">24h</p>
-                  <p className="text-sm text-white/62">staff phản hồi</p>
+                  <p className="text-sm text-white/62">nhân viên phản hồi</p>
                 </div>
                 <div>
                   <p className="text-3xl font-semibold">1-1</p>
@@ -128,16 +128,16 @@ export default function LandingPage() {
           <div className="grid gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
             <div>
               <h2 className="text-4xl font-semibold tracking-tight text-balance">
-                Student experience chuyển từ dashboard sang khám phá.
+                Trải nghiệm học viên chuyển từ bảng số liệu sang khám phá.
               </h2>
               <p className="mt-4 text-base leading-7 text-text-secondary">
-                Học viên vào hệ thống để tìm lựa chọn học, không phải đọc số liệu. Giao diện ưu tiên search, bộ lọc, gợi ý gia sư và lớp đang mở.
+                Học viên vào hệ thống để tìm lựa chọn học, không phải đọc số liệu. Giao diện ưu tiên tìm kiếm, bộ lọc, gợi ý gia sư và lớp đang mở.
               </p>
               <div className="mt-8 grid gap-4">
                 {[
                   ['Nhu cầu học', 'Mục tiêu, cấp lớp, ngân sách và lịch rảnh được gom thành một hồ sơ tìm kiếm.'],
                   ['Gợi ý có lý do', 'Mỗi gia sư/lớp hiển thị điểm phù hợp, môn dạy, phí, lịch và lý do đề xuất.'],
-                  ['Tư vấn rõ bước', 'Staff can thiệp ở các bước cần xác minh, điều phối hoặc chốt lịch.'],
+                  ['Tư vấn rõ bước', 'Nhân viên can thiệp ở các bước cần xác minh, điều phối hoặc chốt lịch.'],
                 ].map(([title, desc]) => (
                   <div key={title} className="flex gap-4">
                     <span className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-800">
@@ -156,7 +156,7 @@ export default function LandingPage() {
               <div className="flex items-center justify-between border-b border-border-light pb-4">
                 <div>
                   <p className="text-sm font-semibold text-text-primary">Gợi ý hôm nay</p>
-                  <p className="text-xs text-text-tertiary">Dựa trên nhu cầu Toán 12 · Online buổi tối</p>
+                  <p className="text-xs text-text-tertiary">Dựa trên nhu cầu Toán 12 · trực tuyến buổi tối</p>
                 </div>
                 <span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-800">
                   12 lựa chọn
@@ -193,9 +193,9 @@ export default function LandingPage() {
         <section id="tutors" className="bg-white py-20">
           <div className="mx-auto grid max-w-7xl gap-10 px-5 lg:grid-cols-3 lg:px-8">
             <div className="lg:col-span-1">
-              <h2 className="text-4xl font-semibold tracking-tight text-balance">Gia sư có workspace như một hồ sơ nghề nghiệp.</h2>
+              <h2 className="text-4xl font-semibold tracking-tight text-balance">Gia sư có không gian làm việc như một hồ sơ nghề nghiệp.</h2>
               <p className="mt-4 text-text-secondary">
-                Tutor không chỉ nhập dữ liệu. Họ thấy mức hoàn thiện hồ sơ, cơ hội lớp phù hợp, lịch dạy và trạng thái xác minh.
+                Gia sư không chỉ nhập dữ liệu. Họ thấy mức hoàn thiện hồ sơ, cơ hội lớp phù hợp, lịch dạy và trạng thái xác minh.
               </p>
             </div>
             {tutorBenefits.map((item) => (
@@ -213,10 +213,10 @@ export default function LandingPage() {
             <div className="rounded-lg border border-border/80 bg-text-primary p-6 text-white shadow-xl">
               <div className="flex items-center justify-between border-b border-white/12 pb-5">
                 <div>
-                  <p className="text-sm font-semibold">Operation cockpit</p>
-                  <p className="text-xs text-white/55">Dành cho staff và admin</p>
+                  <p className="text-sm font-semibold">Bảng điều phối</p>
+                  <p className="text-xs text-white/55">Dành cho nhân viên và quản trị viên</p>
                 </div>
-                <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/72">Today</span>
+                <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/72">Hôm nay</span>
               </div>
               <div className="mt-5 grid gap-3">
                 {operationItems.map((item) => (
@@ -234,10 +234,10 @@ export default function LandingPage() {
             </div>
             <div>
               <h2 className="text-4xl font-semibold tracking-tight text-balance">
-                Backoffice vẫn tồn tại, nhưng chỉ ở đúng nơi cần vận hành.
+                Trang vận hành vẫn tồn tại, nhưng chỉ ở đúng nơi cần điều phối.
               </h2>
               <p className="mt-4 text-base leading-7 text-text-secondary">
-                Staff và admin được thiết kế như bảng điều phối công việc: hàng chờ, cảnh báo, quyết định cần xử lý và báo cáo chủ hệ thống.
+                Nhân viên và quản trị viên được thiết kế như bảng điều phối công việc: hàng chờ, cảnh báo, quyết định cần xử lý và báo cáo chủ hệ thống.
               </p>
               <Link to={appTarget} className="mt-8 inline-flex">
                 <Button>

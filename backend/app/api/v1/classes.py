@@ -388,6 +388,7 @@ async def review_registration(
         count_result = await db.execute(
             select(func.count()).where(
                 ClassRegistration.class_id == class_id,
+                ClassRegistration.id != reg.id,
                 ClassRegistration.status.in_(("PENDING", "APPROVED", "PAID")),
             )
         )

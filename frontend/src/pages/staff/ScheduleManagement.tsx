@@ -1,11 +1,11 @@
-import { useEffect, useState, useMemo } from 'react';
+﻿import { useEffect, useState, useMemo } from 'react';
 import { scheduleApi } from '../../services/api';
 import type { SchedulePatternResponse, LearningSessionResponse, SessionStatus } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
 import Card from '../../components/ui/Card';
 import { getStatusBadge } from '../../components/ui/Badge';
 import EmptyState from '../../components/ui/EmptyState';
-import { PageLoading } from '../../components/ui/Spinner';
+import { ScheduleSkeleton } from '../../components/ui/Skeleton';
 
 export default function StaffSchedules() {
   const [patterns, setPatterns] = useState<SchedulePatternResponse[]>([]);
@@ -33,7 +33,7 @@ export default function StaffSchedules() {
     };
   }, [sessions]);
 
-  if (loading) return <PageLoading />;
+  if (loading) return <ScheduleSkeleton />;
   const dayNames = ['', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
   return (

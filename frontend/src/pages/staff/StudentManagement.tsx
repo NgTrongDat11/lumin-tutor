@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { staffApi } from '../../services/api';
 import { getStatusBadge } from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
-import { PageLoading } from '../../components/ui/Spinner';
+import { TableSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 import { SearchIcon, UsersIcon, ShieldCheckIcon } from '../../components/ui/Icons';
 import { EmptyPanel, MetricTile, PortalPage, SectionPanel } from '../../components/portal/PortalPage';
@@ -187,7 +187,7 @@ export default function StaffStudentManagement() {
 
   const confirmDanger = confirmAction?.type === 'toggle' && confirmAction.student.status === 'ACTIVE';
 
-  if (loading) return <PageLoading />;
+  if (loading) return <TableSkeleton />;
 
   return (
     <PortalPage

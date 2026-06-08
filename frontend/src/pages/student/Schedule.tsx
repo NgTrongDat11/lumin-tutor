@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { scheduleApi } from '../../services/api';
 import type { LearningSessionResponse } from '../../types';
-import { PageLoading } from '../../components/ui/Spinner';
+import { ScheduleSkeleton } from '../../components/ui/Skeleton';
 import { ClockIcon, ArrowRightIcon, CalendarIcon } from '../../components/ui/Icons';
 import Button from '../../components/ui/Button';
 import { getStatusBadge } from '../../components/ui/Badge';
@@ -187,7 +187,7 @@ export default function StudentSchedule() {
     };
   }, [monthSessions.length, sessions, weekSessions]);
 
-  if (loading) return <PageLoading />;
+  if (loading) return <ScheduleSkeleton />;
 
   const prevRange = () => {
     if (viewMode === 'WEEK') {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ComponentType } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { notificationApi } from '../../services/api';
+import { messageApi, notificationApi } from '../../services/api';
 import type { NotificationResponse, UserRole } from '../../types';
 import ChatBubble from '../chat/ChatBubble';
 import Avatar from '../ui/Avatar';
@@ -12,6 +12,7 @@ import {
   ChartIcon,
   ClipboardCheckIcon,
   LayersIcon,
+  MessageCircleIcon,
   SearchIcon,
   SettingsIcon,
   UserCheckIcon,
@@ -41,6 +42,7 @@ const menuConfig: Record<UserRole, MenuSection[]> = {
         { label: 'Lớp của tôi', path: '/student/my-learning', icon: BookOpenIcon },
         { label: 'Thanh toán', path: '/student/payments', icon: WalletIcon },
         { label: 'Đánh giá', path: '/student/reviews', icon: UserCheckIcon },
+        { label: 'Tin nhắn', path: '/student/messages', icon: MessageCircleIcon },
       ],
     },
   ],
@@ -52,6 +54,7 @@ const menuConfig: Record<UserRole, MenuSection[]> = {
         { label: 'Lịch dạy', path: '/tutor/schedule', icon: CalendarIcon, match: ['/tutor/sessions', '/tutor/availability'] },
         { label: 'Lớp & môn dạy', path: '/tutor/teaching', icon: BookOpenIcon, match: ['/tutor/subjects'] },
         { label: 'Cơ hội dạy', path: '/tutor/opportunities', icon: ClipboardCheckIcon, match: ['/tutor/private-requests', '/tutor/applications'] },
+        { label: 'Tin nhắn', path: '/tutor/messages', icon: MessageCircleIcon },
         { label: 'Hồ sơ gia sư', path: '/tutor/profile', icon: UserCheckIcon, match: ['/tutor/qualifications'] },
       ],
     },
@@ -66,34 +69,36 @@ const menuConfig: Record<UserRole, MenuSection[]> = {
         { label: 'Học vụ', path: '/staff/classes', icon: LayersIcon, match: ['/staff/subjects'] },
         { label: 'Lịch & hợp đồng', path: '/staff/operations', icon: ClipboardCheckIcon },
         { label: 'Tài chính', path: '/staff/payments', icon: WalletIcon },
+        { label: 'Tin nhắn', path: '/staff/messages', icon: MessageCircleIcon },
       ],
     },
   ],
   SUPER_ADMIN: [
     {
-      title: 'Owner console',
+      title: 'Bảng quản trị',
       items: [
         { label: 'Tổng quan', path: '/admin', icon: ChartIcon },
-        { label: 'Quản lý staff', path: '/admin/staff', icon: UsersIcon },
+        { label: 'Quản lý nhân viên', path: '/admin/staff', icon: UsersIcon },
         { label: 'Nhật ký hệ thống', path: '/admin/audit', icon: ClipboardCheckIcon },
         { label: 'Cấu hình', path: '/admin/system', icon: SettingsIcon },
+        { label: 'Tin nhắn', path: '/admin/messages', icon: MessageCircleIcon },
       ],
     },
   ],
 };
 
 const rolePortalNames: Record<UserRole, string> = {
-  STUDENT: 'Learning Market',
-  TUTOR: 'Tutor Portal',
-  STAFF: 'Staff Portal',
-  SUPER_ADMIN: 'Admin Console',
+  STUDENT: 'Không gian học tập',
+  TUTOR: 'Không gian gia sư',
+  STAFF: 'Bảng vận hành',
+  SUPER_ADMIN: 'Bảng quản trị',
 };
 
 const roleBadges: Record<UserRole, string> = {
   STUDENT: 'Học viên',
   TUTOR: 'Gia sư',
-  STAFF: 'Staff',
-  SUPER_ADMIN: 'Super Admin',
+  STAFF: 'Nhân viên',
+  SUPER_ADMIN: 'Quản trị viên',
 };
 
 const roleDashboard: Record<UserRole, string> = {
@@ -127,6 +132,7 @@ export default function DashboardLayout() {
   const [headerSearch, setHeaderSearch] = useState('');
   const [notifications, setNotifications] = useState<NotificationResponse[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const [notiLimit, setNotiLimit] = useState(5);
   const [notiLoading, setNotiLoading] = useState(false);
 
@@ -142,6 +148,22 @@ export default function DashboardLayout() {
   useEffect(() => {
     notificationApi.unreadCount().then((d) => setUnreadCount(d.count)).catch(() => {});
   }, []);
+
+  // Fetch unread messages count on mount + poll every 30s
+  const fetchUnreadMessages = useCallback(() => {
+    messageApi.listThreads()
+      .then((threads) => {
+        const total = threads.reduce((sum, t) => sum + (t.unread_count || 0), 0);
+        setUnreadMessages(total);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetchUnreadMessages();
+    const interval = setInterval(fetchUnreadMessages, 30_000);
+    return () => clearInterval(interval);
+  }, [fetchUnreadMessages]);
 
   const fetchNotifications = useCallback((limit: number) => {
     setNotiLoading(true);
@@ -178,6 +200,8 @@ export default function DashboardLayout() {
     setShowNotifications(false);
     if (noti.reference_type === 'learning_session' && noti.reference_id) {
       navigate(`${roleDashboard[user!.role]}/schedule?sessionId=${noti.reference_id}`);
+    } else if (noti.reference_type === 'message_thread' && noti.reference_id) {
+      navigate(`${roleDashboard[user!.role]}/messages?threadId=${noti.reference_id}`);
     }
   }, [navigate, user]);
 
@@ -259,6 +283,11 @@ export default function DashboardLayout() {
                     >
                       <item.icon className={`h-[18px] w-[18px] ${active ? 'text-primary-700' : 'text-text-tertiary'}`} />
                       <span className="truncate">{item.label}</span>
+                      {item.label === 'Tin nhắn' && unreadMessages > 0 && (
+                        <span className="ml-auto flex h-5 min-w-[20px] items-center justify-center rounded-full bg-danger-500 px-1.5 text-[10px] font-bold text-white">
+                          {unreadMessages > 99 ? '99+' : unreadMessages}
+                        </span>
+                      )}
                     </Link>
                   );
                 })}
@@ -340,7 +369,7 @@ export default function DashboardLayout() {
                 </Link>
               )}
               <div className="min-w-0">
-                <h1 className="hidden truncate text-xl font-bold tracking-tight text-text-primary md:block">{activeItem?.label || 'Dashboard'}</h1>
+                <h1 className="hidden truncate text-xl font-bold tracking-tight text-text-primary md:block">{activeItem?.label || 'Tổng quan'}</h1>
                 <p className="hidden truncate text-xs font-medium text-text-tertiary md:block mt-0.5">{rolePortalNames[user.role]}</p>
               </div>
             </div>
@@ -529,7 +558,7 @@ export default function DashboardLayout() {
                   type="button"
                   onClick={() => { setShowHeaderMenu(!showHeaderMenu); setShowNotifications(false); setShowHelpMenu(false); }}
                   className="flex items-center gap-2 rounded-full focus:outline-none focus:ring-2 focus:ring-primary-500/20 transition-all cursor-pointer"
-                  aria-label="User menu"
+                  aria-label="Menu tài khoản"
                 >
                   <Avatar name={user.full_name} src={user.avatar_url || undefined} size="sm" />
                 </button>
@@ -594,13 +623,15 @@ export default function DashboardLayout() {
         </header>
 
         {isStudent && (
-          <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-5 border-t border-border-light bg-white/94 px-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] backdrop-blur-xl lg:hidden">
+          <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-6 border-t border-border-light bg-white/94 px-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] backdrop-blur-xl lg:hidden">
             {flatMenu.map((item) => {
               const active = isActiveItem(item, location.pathname);
               const mobileLabel = item.label === 'Thời khóa biểu'
                 ? 'Lịch'
                 : item.label === 'Lớp của tôi'
                   ? 'Lớp'
+                  : item.label === 'Tin nhắn'
+                    ? 'Nhắn'
                   : item.label;
               return (
                 <Link
@@ -610,7 +641,14 @@ export default function DashboardLayout() {
                     active ? 'text-primary-700' : 'text-text-tertiary hover:text-text-secondary'
                   }`}
                 >
-                  <item.icon className="mb-1 h-5 w-5" />
+                  <div className="relative">
+                    <item.icon className="mb-1 h-5 w-5" />
+                    {item.label === 'Tin nhắn' && unreadMessages > 0 && (
+                      <span className="absolute -right-1.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-danger-500 px-1 text-[9px] font-bold text-white">
+                        {unreadMessages > 99 ? '99+' : unreadMessages}
+                      </span>
+                    )}
+                  </div>
                   <span className="w-full truncate text-center text-[10px] font-medium leading-none">{mobileLabel}</span>
                 </Link>
               );
@@ -628,10 +666,10 @@ export default function DashboardLayout() {
               <div className="mb-2 flex items-center justify-center gap-2 text-text-tertiary">
                 <span className="font-bold text-primary-700">Lumin</span>
                 <span>•</span>
-                <span>Learning Market</span>
+                <span>Không gian học tập</span>
               </div>
               <p className="text-xs text-text-tertiary">
-                &copy; {new Date().getFullYear()} Lumin Education. All rights reserved.
+                &copy; {new Date().getFullYear()} Lumin Education. Đã đăng ký bản quyền.
               </p>
             </footer>
           </div>

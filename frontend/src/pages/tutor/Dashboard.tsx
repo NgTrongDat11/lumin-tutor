@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType } from 'react';
+﻿import { useEffect, useState, type ComponentType } from 'react';
 import { Link } from 'react-router-dom';
 import { classApi, privateRequestApi, scheduleApi, tutorApi } from '../../services/api';
 import type {
@@ -14,7 +14,7 @@ import { useAuth } from '../../hooks/useAuth';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
 import { getStatusBadge } from '../../components/ui/Badge';
-import { PageLoading } from '../../components/ui/Spinner';
+import { DashboardSkeleton } from '../../components/ui/Skeleton';
 import {
   ArrowRightIcon,
   BookOpenIcon,
@@ -31,6 +31,23 @@ type IconType = ComponentType<{ className?: string }>;
 
 function formatMoney(value: string | number | null | undefined) {
   return `${Number(value || 0).toLocaleString('vi-VN')}đ`;
+}
+
+function verificationStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    DRAFT: 'Bản nháp',
+    PENDING_REVIEW: 'Chờ duyệt',
+    VERIFIED: 'Đã xác minh',
+    REJECTED: 'Từ chối',
+  };
+  return labels[status] || status;
+}
+
+function teachingModeLabel(mode: string | null | undefined) {
+  if (mode === 'ONLINE') return 'Trực tuyến';
+  if (mode === 'OFFLINE') return 'Trực tiếp';
+  if (mode === 'BOTH') return 'Trực tuyến hoặc trực tiếp';
+  return 'Chưa rõ';
 }
 
 function getProfileScore(
@@ -83,7 +100,7 @@ export default function TutorDashboard() {
     });
   }, []);
 
-  if (loading) return <PageLoading />;
+  if (loading) return <DashboardSkeleton />;
 
   const pendingRequests = requests.filter((r) => r.status === 'SENT');
   const recruitingClasses = classes.filter((c) => ['TUTOR_RECRUITING', 'ENROLLING'].includes(c.status)).slice(0, 4);
@@ -108,7 +125,7 @@ export default function TutorDashboard() {
             <div className="ml-3">
               <h3 className="text-sm font-medium text-warning-800">Tài khoản chưa được duyệt</h3>
               <div className="mt-2 text-sm text-warning-700">
-                <p>Hồ sơ của bạn đang ở trạng thái <strong>{profile.verification_status}</strong>. Bạn không thể nhận lớp hay xác nhận yêu cầu học 1-1 cho đến khi được Staff duyệt. Vui lòng cập nhật hồ sơ và gửi duyệt.</p>
+                <p>Hồ sơ của bạn đang ở trạng thái <strong>{verificationStatusLabel(profile.verification_status)}</strong>. Bạn không thể nhận lớp hay xác nhận yêu cầu học 1-1 cho đến khi được nhân viên duyệt. Vui lòng cập nhật hồ sơ và gửi duyệt.</p>
               </div>
             </div>
           </div>
@@ -163,7 +180,7 @@ export default function TutorDashboard() {
               <div>
                 <h3 className="text-lg font-semibold">{profile?.qualification_level || 'Gia sư Lumin'}</h3>
                 <p className="text-sm text-text-secondary">
-                  {profile?.years_experience || 0} năm kinh nghiệm · {profile?.teaching_mode || 'BOTH'}
+                  {profile?.years_experience || 0} năm kinh nghiệm · {teachingModeLabel(profile?.teaching_mode)}
                 </p>
                 <p className="mt-1 text-sm text-text-tertiary">
                   {profile?.teaching_area || 'Chưa khai báo khu vực'}
@@ -171,7 +188,7 @@ export default function TutorDashboard() {
               </div>
             </div>
             <p className="mt-5 line-clamp-3 text-sm leading-6 text-text-secondary">
-              {profile?.bio || 'Thêm phần giới thiệu ngắn về phong cách giảng dạy, kết quả từng hỗ trợ và thế mạnh môn học để profile chuyên nghiệp hơn.'}
+              {profile?.bio || 'Thêm phần giới thiệu ngắn về phong cách giảng dạy, kết quả từng hỗ trợ và thế mạnh môn học để hồ sơ chuyên nghiệp hơn.'}
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               {subjects.slice(0, 4).map((subject) => (
@@ -242,7 +259,7 @@ export default function TutorDashboard() {
                   {course.grade_level} · {course.total_sessions} buổi · {formatMoney(course.fee_per_session_per_student)}/học viên
                 </p>
                 <div className="mt-4 flex items-center justify-between">
-                  <span className="text-xs text-text-tertiary">{course.mode === 'ONLINE' ? 'Online' : course.location || 'Trực tiếp'}</span>
+                  <span className="text-xs text-text-tertiary">{course.mode === 'ONLINE' ? 'Trực tuyến' : course.location || 'Trực tiếp'}</span>
                   {getStatusBadge(course.status)}
                 </div>
               </article>

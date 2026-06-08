@@ -7,6 +7,9 @@ import type {
   RegisterTutorRequest,
   ChatMessage,
   ChatSendResponse,
+  MessageResponse,
+  MessageThreadEnsureRequest,
+  MessageThreadResponse,
   MeResponse,
   TutorProfileUpdate,
   TutorProfileResponse,
@@ -122,6 +125,23 @@ export const chatApi = {
   },
 };
 
+export const messageApi = {
+  listThreads: () =>
+    api.get<ApiResponse<MessageThreadResponse[]>>('/messages/threads').then(unwrap),
+
+  ensureThread: (data: MessageThreadEnsureRequest) =>
+    api.post<ApiResponse<MessageThreadResponse>>('/messages/threads', data).then(unwrap),
+
+  getThread: (id: number) =>
+    api.get<ApiResponse<MessageThreadResponse>>(`/messages/threads/${id}`).then(unwrap),
+
+  listMessages: (threadId: number) =>
+    api.get<ApiResponse<MessageResponse[]>>(`/messages/threads/${threadId}/messages`).then(unwrap),
+
+  sendMessage: (threadId: number, content: string) =>
+    api.post<ApiResponse<MessageResponse>>(`/messages/threads/${threadId}/messages`, { content }).then(unwrap),
+};
+
 /* ═══════════════════════════════════════════════════
    TUTOR PROFILE
    ═══════════════════════════════════════════════════ */
@@ -164,6 +184,9 @@ export const tutorApi = {
 
   addAvailability: (data: AvailabilityCreate) =>
     api.post<ApiResponse<TutorAvailabilityResponse>>('/tutor/availabilities', data).then(unwrap),
+
+  updateAvailability: (id: number, data: AvailabilityCreate) =>
+    api.put<ApiResponse<TutorAvailabilityResponse>>(`/tutor/availabilities/${id}`, data).then(unwrap),
 
   deleteAvailability: (id: number) =>
     api.delete<ApiResponse<null>>(`/tutor/availabilities/${id}`).then(unwrap),

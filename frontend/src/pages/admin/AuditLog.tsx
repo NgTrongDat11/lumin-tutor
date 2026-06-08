@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { adminApi, extractErrorMessage } from '../../services/api';
 import type { AuditLogResponse } from '../../types';
-import { PageLoading } from '../../components/ui/Spinner';
+import { TableSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 import { EmptyPanel, PortalPage, SectionPanel } from '../../components/portal/PortalPage';
 
@@ -15,9 +15,9 @@ interface ActionConfig {
 }
 
 const actionMap: Record<string, ActionConfig> = {
-  STAFF_CREATED:          { label: 'Tạo staff',                 category: 'staff' },
-  STAFF_STATUS_UPDATED:   { label: 'Cập nhật trạng thái staff', category: 'staff' },
-  STAFF_PASSWORD_RESET:   { label: 'Cấp lại mật khẩu staff',   category: 'staff' },
+  STAFF_CREATED:          { label: 'Tạo nhân viên',                 category: 'staff' },
+  STAFF_STATUS_UPDATED:   { label: 'Cập nhật trạng thái nhân viên', category: 'staff' },
+  STAFF_PASSWORD_RESET:   { label: 'Cấp lại mật khẩu nhân viên',   category: 'staff' },
   ACCOUNT_STATUS_UPDATED: { label: 'Cập nhật trạng thái tài khoản', category: 'account' },
   ACCOUNT_PASSWORD_RESET: { label: 'Cấp lại mật khẩu tài khoản',   category: 'account' },
   QUALIFICATION_APPROVED: { label: 'Duyệt chứng chỉ',          category: 'review' },
@@ -34,8 +34,33 @@ const categoryConfig: Record<Category, { dot: string; bg: string; icon: string }
   account: { dot: 'bg-danger-500',  bg: 'border-l-danger-400',  icon: '🔒' },
 };
 
+function prettifyAction(action: string) {
+  return action.replaceAll('_', ' ').toLowerCase();
+}
+
+function roleLabel(role: string) {
+  const labels: Record<string, string> = {
+    SUPER_ADMIN: 'Quản trị viên',
+    STAFF: 'Nhân viên',
+    TUTOR: 'Gia sư',
+    STUDENT: 'Học viên',
+  };
+  return labels[role] || role;
+}
+
+function statusLabel(status: string) {
+  const labels: Record<string, string> = {
+    ACTIVE: 'Đang hoạt động',
+    SUSPENDED: 'Bị khóa',
+    VERIFIED: 'Đã xác minh',
+    REJECTED: 'Từ chối',
+    PENDING_REVIEW: 'Chờ duyệt',
+  };
+  return labels[status] || status;
+}
+
 function getConfig(action: string): ActionConfig & { category: Category } {
-  return actionMap[action] || { label: action.replaceAll('_', ' ').toLowerCase(), category: 'account' };
+  return actionMap[action] || { label: prettifyAction(action), category: 'account' };
 }
 
 /* ── Detail renderer ─────────────────────────────── */
@@ -59,13 +84,13 @@ function DetailView({ detail }: { detail: Record<string, unknown> }) {
         <span className="font-medium text-text-secondary">{fullName}</span>
       )}
       {role && (
-        <span className="rounded-md bg-primary-50 px-2 py-0.5 font-semibold text-primary-700">{role}</span>
+        <span className="rounded-md bg-primary-50 px-2 py-0.5 font-semibold text-primary-700">{roleLabel(role)}</span>
       )}
       {oldStatus && newStatus && (
         <span className="flex items-center gap-1 text-text-tertiary">
-          <span className="rounded bg-surface-tertiary px-1.5 py-0.5">{oldStatus}</span>
+          <span className="rounded bg-surface-tertiary px-1.5 py-0.5">{statusLabel(oldStatus)}</span>
           <span>→</span>
-          <span className="rounded bg-surface-tertiary px-1.5 py-0.5">{newStatus}</span>
+          <span className="rounded bg-surface-tertiary px-1.5 py-0.5">{statusLabel(newStatus)}</span>
         </span>
       )}
       {reviewNote && (
@@ -78,7 +103,7 @@ function DetailView({ detail }: { detail: Record<string, unknown> }) {
 /* ── Date helpers ─────────────────────────────────── */
 
 function toDateKey(isoString: string | null): string {
-  if (!isoString) return 'unknown';
+  if (!isoString) return 'Không rõ';
   return new Date(isoString).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
@@ -148,7 +173,7 @@ function CategoryBar({ logs }: { logs: AuditLogResponse[] }) {
       </div>
       <div className="flex flex-wrap gap-x-5 gap-y-1">
         {[
-          { cat: 'staff' as Category, label: 'Quản lý staff' },
+          { cat: 'staff' as Category, label: 'Quản lý nhân viên' },
           { cat: 'review' as Category, label: 'Duyệt vận hành' },
           { cat: 'account' as Category, label: 'Tài khoản' },
         ].map(({ cat, label }) => (
@@ -177,7 +202,7 @@ export default function AdminAuditLog() {
       .finally(() => setLoading(false));
   }, [toast]);
 
-  if (loading) return <PageLoading />;
+  if (loading) return <TableSkeleton />;
 
   const groups = groupByDate(logs);
 
@@ -193,9 +218,9 @@ export default function AdminAuditLog() {
         </div>
       )}
 
-      <SectionPanel title="Timeline" description="Các hành động nhạy cảm, nhóm theo ngày.">
+      <SectionPanel title="Dòng thời gian" description="Các hành động nhạy cảm, nhóm theo ngày.">
         {logs.length === 0 ? (
-          <EmptyPanel title="Chưa có audit log" description="Các thao tác mới sẽ xuất hiện ở đây." />
+          <EmptyPanel title="Chưa có nhật ký" description="Các thao tác mới sẽ xuất hiện ở đây." />
         ) : (
           <div className="space-y-6">
             {groups.map((group) => (
@@ -230,7 +255,7 @@ export default function AdminAuditLog() {
                               <p className="font-semibold text-text-primary">{config.label}</p>
                             </div>
                             <p className="mt-1 text-sm text-text-secondary">
-                              <span className="font-medium">{log.actor_name || log.actor_email || 'System'}</span>
+                              <span className="font-medium">{log.actor_name || log.actor_email || 'Hệ thống'}</span>
                               {' '}→ {log.target_type}
                               {log.target_id ? ` #${log.target_id}` : ''}
                             </p>

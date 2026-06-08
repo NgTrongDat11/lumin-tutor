@@ -18,6 +18,7 @@ import StudentMyLearning from '../pages/student/MyLearning';
 import StudentSchedule from '../pages/student/Schedule';
 import StudentPayments from '../pages/student/Payments';
 import StudentReviews from '../pages/student/Reviews';
+import MessagesPage from '../pages/messages/MessagesPage';
 
 // Tutor pages
 import TutorDashboard from '../pages/tutor/Dashboard';
@@ -86,6 +87,7 @@ export default function AppRouter() {
           <Route path="/student/my-learning" element={<StudentMyLearning />} />
           <Route path="/student/payments" element={<StudentPayments />} />
           <Route path="/student/reviews" element={<StudentReviews />} />
+          <Route path="/student/messages" element={<MessagesPage />} />
         </Route>
 
         {/* Tutor routes */}
@@ -101,6 +103,7 @@ export default function AppRouter() {
           <Route path="/tutor/opportunities" element={<TutorOpportunities />} />
           <Route path="/tutor/private-requests" element={<TutorOpportunities initialTab="requests" />} />
           <Route path="/tutor/applications" element={<TutorOpportunities initialTab="classes" />} />
+          <Route path="/tutor/messages" element={<MessagesPage />} />
         </Route>
 
         {/* Staff routes */}
@@ -112,6 +115,7 @@ export default function AppRouter() {
           <Route path="/staff/subjects" element={<StaffAcademic initialTab="subjects" />} />
           <Route path="/staff/operations" element={<StaffOperations />} />
           <Route path="/staff/payments" element={<StaffPayments />} />
+          <Route path="/staff/messages" element={<MessagesPage />} />
         </Route>
 
         {/* Admin routes */}
@@ -120,6 +124,7 @@ export default function AppRouter() {
           <Route path="/admin/staff" element={<AdminStaffManagement />} />
           <Route path="/admin/audit" element={<AdminAuditLog />} />
           <Route path="/admin/system" element={<AdminSystem />} />
+          <Route path="/admin/messages" element={<MessagesPage />} />
         </Route>
 
         {/* Fallback */}

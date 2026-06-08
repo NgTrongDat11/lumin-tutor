@@ -3,7 +3,7 @@
 from datetime import time
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ── Tutor Profile ────────────────────────────────────────
@@ -99,6 +99,12 @@ class AvailabilityCreate(BaseModel):
     start_time: time
     end_time: time
     mode: str = "BOTH"
+
+    @model_validator(mode="after")
+    def validate_time_range(self):
+        if self.start_time >= self.end_time:
+            raise ValueError("Giờ kết thúc phải sau giờ bắt đầu.")
+        return self
 
 
 class TutorAvailabilityResponse(BaseModel):

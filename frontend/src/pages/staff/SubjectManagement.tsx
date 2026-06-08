@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+﻿import { useEffect, useState, type FormEvent } from 'react';
 import { subjectApi } from '../../services/api';
 import type { SubjectResponse } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -7,7 +7,7 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 import { getStatusBadge } from '../../components/ui/Badge';
-import { PageLoading } from '../../components/ui/Spinner';
+import { CardGridSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 
 export default function StaffSubjects() {
@@ -25,7 +25,7 @@ export default function StaffSubjects() {
     catch { toast('error', 'Thất bại'); }
   };
 
-  if (loading) return <PageLoading />;
+  if (loading) return <CardGridSkeleton />;
 
   return (
     <div className="animate-slide-up">

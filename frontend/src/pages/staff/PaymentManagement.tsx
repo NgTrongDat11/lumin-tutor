@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { paymentApi } from '../../services/api';
 import type { PaymentResponse, PaymentStatus } from '../../types';
 import { getStatusBadge } from '../../components/ui/Badge';
-import { PageLoading } from '../../components/ui/Spinner';
+import { TableSkeleton } from '../../components/ui/Skeleton';
 import { WalletIcon, ClipboardCheckIcon, UserCheckIcon } from '../../components/ui/Icons';
 import { EmptyPanel, MetricTile, PortalPage, SectionPanel } from '../../components/portal/PortalPage';
 
@@ -31,20 +31,20 @@ export default function StaffPayments() {
     queue: payments.filter((payment) => ['CREATED', 'PENDING', 'REFUND_PENDING'].includes(payment.status)).length,
   }), [payments]);
 
-  if (loading) return <PageLoading />;
+  if (loading) return <TableSkeleton />;
 
   return (
     <PortalPage title="Tài chính" description="Theo dõi thanh toán theo hàng chờ xử lý, doanh thu ghi nhận và hoàn tiền.">
       <div className="grid gap-4 md:grid-cols-4">
         <MetricTile icon={WalletIcon} label="Doanh thu" value={currency(stats.totalRevenue)} hint="Từ giao dịch thành công." tone="success" />
-        <MetricTile icon={ClipboardCheckIcon} label="Chờ thanh toán" value={currency(stats.totalPending)} hint="CREATED hoặc PENDING." tone="warning" />
-        <MetricTile icon={WalletIcon} label="Đã hoàn tiền" value={currency(stats.totalRefunded)} hint="Tổng refund đã ghi nhận." tone="neutral" />
-        <MetricTile icon={UserCheckIcon} label="Hàng chờ" value={stats.queue} hint="Cần staff kiểm tra." />
+        <MetricTile icon={ClipboardCheckIcon} label="Chờ thanh toán" value={currency(stats.totalPending)} hint="Đã tạo hoặc đang chờ." tone="warning" />
+        <MetricTile icon={WalletIcon} label="Đã hoàn tiền" value={currency(stats.totalRefunded)} hint="Tổng số tiền hoàn đã ghi nhận." tone="neutral" />
+        <MetricTile icon={UserCheckIcon} label="Hàng chờ" value={stats.queue} hint="Cần nhân viên kiểm tra." />
       </div>
 
       <SectionPanel
         title="Giao dịch"
-        description="Danh sách vẫn giữ đủ thông tin nghiệp vụ, nhưng bộ lọc và metric giúp đọc nhanh hơn."
+        description="Danh sách vẫn giữ đủ thông tin nghiệp vụ, nhưng bộ lọc và chỉ số giúp đọc nhanh hơn."
         action={(
           <div className="flex gap-1 rounded-lg border border-border-light bg-surface-secondary p-1">
             {(['ALL', 'PENDING', 'SUCCEEDED', 'REFUNDED'] as const).map((item) => (

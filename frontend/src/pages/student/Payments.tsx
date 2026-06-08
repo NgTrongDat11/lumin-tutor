@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import { paymentApi, classApi } from '../../services/api';
 import type { PaymentResponse, ClassRegistrationResponse } from '../../types';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
-import { PageLoading } from '../../components/ui/Spinner';
+import { TableSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { WalletIcon, ClipboardCheckIcon, CalendarIcon, UsersIcon, UserCheckIcon } from '../../components/ui/Icons';
@@ -223,7 +223,7 @@ export default function StudentPayments() {
 
   const formatCurrency = (amount: number) => `${amount.toLocaleString('vi-VN')}đ`;
 
-  if (loading) return <PageLoading />;
+  if (loading) return <TableSkeleton />;
 
   return (
     <PortalPage 

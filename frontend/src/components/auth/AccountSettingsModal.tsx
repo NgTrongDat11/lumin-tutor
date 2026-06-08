@@ -8,6 +8,16 @@ import Avatar from '../ui/Avatar';
 import { useToast } from '../ui/Toast';
 import axios from 'axios';
 
+function roleLabel(role: string) {
+  const labels: Record<string, string> = {
+    SUPER_ADMIN: 'Quản trị viên',
+    STAFF: 'Nhân viên',
+    TUTOR: 'Gia sư',
+    STUDENT: 'Học viên',
+  };
+  return labels[role] || role;
+}
+
 export default function AccountSettingsModal({ onClose }: { onClose: () => void }) {
   const { user, refresh } = useAuth();
   const { toast } = useToast();
@@ -147,7 +157,7 @@ export default function AccountSettingsModal({ onClose }: { onClose: () => void 
             </div>
             <div>
               <span className="text-xs text-text-tertiary">Vai trò</span>
-              <p className="text-sm font-medium">{user.role}</p>
+              <p className="text-sm font-medium">{roleLabel(user.role)}</p>
             </div>
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+﻿import { useEffect, useState, useMemo } from 'react';
 import { scheduleApi } from '../../services/api';
 import type { ContractResponse, ContractStatus } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -6,7 +6,7 @@ import Card from '../../components/ui/Card';
 import { getStatusBadge } from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import EmptyState from '../../components/ui/EmptyState';
-import { PageLoading } from '../../components/ui/Spinner';
+import { TableSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 
@@ -51,7 +51,7 @@ export default function StaffContracts() {
     };
   }, [contracts]);
 
-  if (loading) return <PageLoading />;
+  if (loading) return <TableSkeleton />;
 
   return (
     <div className="animate-slide-up space-y-6">

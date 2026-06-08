@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { scheduleApi } from '../../services/api';
 import type { ContractResponse, ContractStatus, LearningSessionResponse, SchedulePatternResponse, SessionStatus } from '../../types';
 import Button from '../../components/ui/Button';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { getStatusBadge } from '../../components/ui/Badge';
-import { PageLoading } from '../../components/ui/Spinner';
+import { DashboardSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 import { CalendarIcon, ClipboardCheckIcon, ClockIcon, UserCheckIcon } from '../../components/ui/Icons';
 import { EmptyPanel, MetricTile, PortalPage, SectionPanel, SegmentedTabs, WeekPlanner, type WeekEvent } from '../../components/portal/PortalPage';
@@ -90,7 +90,17 @@ export default function StaffOperations({ initialTab = 'schedules' }: { initialT
       tone: 'primary',
     }));
 
-  if (loading) return <PageLoading />;
+  if (loading) return <DashboardSkeleton />;
+
+  const contractStatusLabel = (status: ContractStatus) => {
+    const labels: Partial<Record<ContractStatus, string>> = {
+      PENDING: 'Chờ duyệt',
+      ACTIVE: 'Đang hiệu lực',
+      COMPLETED: 'Hoàn thành',
+      CANCELLED: 'Đã hủy',
+    };
+    return labels[status] || status;
+  };
 
   return (
     <PortalPage
@@ -101,7 +111,7 @@ export default function StaffOperations({ initialTab = 'schedules' }: { initialT
         <MetricTile icon={CalendarIcon} label="Đã lên lịch" value={scheduled} hint="Cần điểm danh." />
         <MetricTile icon={ClockIcon} label="Đã hoàn thành" value={completed} hint="Nền thanh toán." tone="success" />
         <MetricTile icon={ClipboardCheckIcon} label="HĐ chờ duyệt" value={pendingContracts} hint="Cần xử lý." tone="warning" />
-        <MetricTile icon={UserCheckIcon} label="HĐ active" value={activeContracts} hint="Đang vận hành." tone="neutral" />
+        <MetricTile icon={UserCheckIcon} label="HĐ hiệu lực" value={activeContracts} hint="Đang vận hành." tone="neutral" />
       </div>
 
       <SegmentedTabs
@@ -160,7 +170,7 @@ export default function StaffOperations({ initialTab = 'schedules' }: { initialT
             )}
 
             {filteredSessions.length === 0 ? (
-              <EmptyPanel title="Không có buổi học" description={sessionFilter !== 'ALL' ? 'Thử filter khác.' : undefined} />
+              <EmptyPanel title="Không có buổi học" description={sessionFilter !== 'ALL' ? 'Thử bộ lọc khác.' : undefined} />
             ) : (
               <div className="divide-y divide-border-light">
                 {filteredSessions.map((s) => (
@@ -195,14 +205,14 @@ export default function StaffOperations({ initialTab = 'schedules' }: { initialT
                   onClick={() => setContractFilter(f)}
                   className={`rounded-md px-2.5 py-1 text-xs font-semibold ${contractFilter === f ? 'bg-white text-text-primary shadow-xs' : 'text-text-secondary hover:bg-white/70'}`}
                 >
-                  {f === 'ALL' ? 'Tất cả' : f === 'PENDING' ? 'Chờ duyệt' : f === 'ACTIVE' ? 'Active' : f === 'COMPLETED' ? 'Hoàn thành' : 'Đã hủy'}
+                  {f === 'ALL' ? 'Tất cả' : f === 'PENDING' ? 'Chờ duyệt' : f === 'ACTIVE' ? 'Hiệu lực' : f === 'COMPLETED' ? 'Hoàn thành' : 'Đã hủy'}
                 </button>
               ))}
             </div>
           )}
         >
           {filteredContracts.length === 0 ? (
-            <EmptyPanel title="Không có hợp đồng" description={contractFilter !== 'ALL' ? 'Thử filter khác.' : undefined} />
+            <EmptyPanel title="Không có hợp đồng" description={contractFilter !== 'ALL' ? 'Thử bộ lọc khác.' : undefined} />
           ) : (
             <div className="divide-y divide-border-light">
               {filteredContracts.map((c) => (
@@ -242,7 +252,7 @@ export default function StaffOperations({ initialTab = 'schedules' }: { initialT
         onClose={() => setConfirmAction(null)}
         onConfirm={() => confirmAction && updateContract(confirmAction.id, confirmAction.action)}
         title="Xác nhận cập nhật"
-        description={`Chuyển hợp đồng #${confirmAction?.id} sang trạng thái ${confirmAction?.action === 'ACTIVE' ? 'Duyệt' : confirmAction?.action === 'COMPLETED' ? 'Hoàn thành' : 'Hủy'}?`}
+        description={`Chuyển hợp đồng #${confirmAction?.id} sang trạng thái ${confirmAction ? contractStatusLabel(confirmAction.action) : ''}?`}
         confirmText="Xác nhận"
         danger={confirmAction?.action === 'CANCELLED'}
         loading={actionLoading}

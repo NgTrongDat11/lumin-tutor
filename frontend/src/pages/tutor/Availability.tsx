@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+﻿import { useEffect, useState, type FormEvent } from 'react';
 import { tutorApi } from '../../services/api';
 import type { TutorAvailabilityResponse } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -8,7 +8,7 @@ import Select from '../../components/ui/Select';
 import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 import EmptyState from '../../components/ui/EmptyState';
-import { PageLoading } from '../../components/ui/Spinner';
+import { CardGridSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 
 const dayNames = ['', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật'];
@@ -28,7 +28,7 @@ export default function TutorAvailability() {
     catch { toast('error', 'Xoá thất bại'); }
   };
 
-  if (loading) return <PageLoading />;
+  if (loading) return <CardGridSkeleton />;
 
   // Group by day
   const grouped = avails.reduce((acc, a) => {

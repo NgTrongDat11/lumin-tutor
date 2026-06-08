@@ -1,9 +1,11 @@
-import { Outlet, Link } from 'react-router-dom';
+import { Outlet, Link, useNavigate } from 'react-router-dom';
 import authHero from '../../assets/auth-hero.png';
 
 export default function PublicLayout() {
+  const navigate = useNavigate();
+
   return (
-    <div className="min-h-screen bg-white flex">
+    <div className="flex min-h-screen bg-white">
       {/* Left — hero image, clean overlay */}
       <div className="hidden lg:flex lg:w-[52%] relative overflow-hidden">
         <img
@@ -49,15 +51,49 @@ export default function PublicLayout() {
       </div>
 
       {/* Right — form */}
-      <div className="flex-1 flex items-center justify-center p-6 sm:p-12 bg-surface-secondary">
-        <div className="w-full max-w-md animate-fade-in">
-          <Link to="/" className="lg:hidden flex items-center gap-2.5 mb-8 hover:opacity-80 transition-opacity">
-            <div className="w-9 h-9 bg-primary-950 rounded-lg flex items-center justify-center">
-              <span className="text-sm font-bold text-white">L</span>
+      <div className="flex min-h-screen flex-1 flex-col bg-surface-secondary">
+        <header className="sticky top-0 z-20 border-b border-border-light bg-surface-secondary/95 px-4 py-3 backdrop-blur lg:hidden">
+          <div className="mx-auto flex max-w-md items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="inline-flex h-10 items-center gap-2 rounded-lg border border-border-light bg-white px-3 text-sm font-semibold text-text-secondary shadow-xs transition-colors hover:text-text-primary"
+              aria-label="Quay lại trang trước"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M19 12H5" />
+                <path d="m11 6-6 6 6 6" />
+              </svg>
+              Quay lại
+            </button>
+            <Link to="/" className="inline-flex h-10 items-center gap-2 rounded-lg border border-border-light bg-white px-3 text-sm font-semibold text-text-primary shadow-xs">
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary-950 text-xs font-bold text-white">L</span>
+              Trang chủ
+            </Link>
+          </div>
+        </header>
+
+        <div className="flex flex-1 items-start justify-center px-4 pb-8 pt-5 sm:px-6 sm:pt-8 lg:items-center lg:p-12">
+          <div className="w-full max-w-md animate-fade-in">
+            <div className="mb-5 hidden items-center justify-between lg:flex">
+              <button
+                type="button"
+                onClick={() => navigate(-1)}
+                className="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-semibold text-text-secondary transition-colors hover:bg-white hover:text-text-primary"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M19 12H5" />
+                  <path d="m11 6-6 6 6 6" />
+                </svg>
+                Quay lại
+              </button>
+              <Link to="/" className="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-semibold text-text-primary transition-colors hover:bg-white">
+                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary-950 text-xs font-bold text-white">L</span>
+                Trang chủ
+              </Link>
             </div>
-            <span className="text-xl font-bold tracking-tight text-text-primary">Lumin</span>
-          </Link>
-          <Outlet />
+            <Outlet />
+          </div>
         </div>
       </div>
     </div>

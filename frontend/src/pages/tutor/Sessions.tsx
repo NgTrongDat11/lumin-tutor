@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { scheduleApi } from '../../services/api';
 import type { LearningSessionResponse } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -6,7 +6,7 @@ import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { getStatusBadge } from '../../components/ui/Badge';
 import EmptyState from '../../components/ui/EmptyState';
-import { PageLoading } from '../../components/ui/Spinner';
+import { CardGridSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 
 export default function TutorSessions() {
@@ -25,7 +25,7 @@ export default function TutorSessions() {
     } catch { toast('error', 'Cập nhật thất bại'); }
   };
 
-  if (loading) return <PageLoading />;
+  if (loading) return <CardGridSkeleton />;
 
   const upcoming = sessions.filter((s) => s.status === 'SCHEDULED');
   const past = sessions.filter((s) => s.status !== 'SCHEDULED');

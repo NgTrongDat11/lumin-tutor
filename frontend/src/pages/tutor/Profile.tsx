@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+﻿import { useEffect, useState, type FormEvent } from 'react';
 import { tutorApi } from '../../services/api';
 import type { QualificationCreate, QualificationResponse, TutorProfileResponse, TutorProfileUpdate } from '../../types';
 import { useAuth } from '../../hooks/useAuth';
@@ -9,7 +9,7 @@ import Select from '../../components/ui/Select';
 import Textarea from '../../components/ui/Textarea';
 import { getStatusBadge } from '../../components/ui/Badge';
 import DocumentLink from '../../components/ui/DocumentLink';
-import { PageLoading } from '../../components/ui/Spinner';
+import { FormSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 import { ShieldCheckIcon, UserCheckIcon, WalletIcon } from '../../components/ui/Icons';
 import { EmptyPanel, MetricTile, PortalPage, SectionPanel, SegmentedTabs } from '../../components/portal/PortalPage';
@@ -36,6 +36,23 @@ function certificateLabel(type: string) {
     OTHER: 'Khác',
   };
   return labels[type] || type;
+}
+
+function verificationStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    DRAFT: 'Bản nháp',
+    PENDING_REVIEW: 'Chờ duyệt',
+    VERIFIED: 'Đã xác minh',
+    REJECTED: 'Từ chối',
+  };
+  return labels[status] || status;
+}
+
+function teachingModeLabel(mode: string | null | undefined) {
+  if (mode === 'ONLINE') return 'Trực tuyến';
+  if (mode === 'OFFLINE') return 'Trực tiếp';
+  if (mode === 'BOTH') return 'Trực tuyến và trực tiếp';
+  return 'Chưa rõ';
 }
 
 export default function TutorProfile({ initialTab = 'profile' }: { initialTab?: ProfileTab }) {
@@ -117,7 +134,7 @@ export default function TutorProfile({ initialTab = 'profile' }: { initialTab?: 
     }
   };
 
-  if (loading) return <PageLoading />;
+  if (loading) return <FormSkeleton />;
   if (!profile) return <PortalPage title="Hồ sơ gia sư"><EmptyPanel title="Không tải được hồ sơ" /></PortalPage>;
 
   const score = completionScore(profile, qualifications);
@@ -138,9 +155,9 @@ export default function TutorProfile({ initialTab = 'profile' }: { initialTab?: 
     >
       <div className="grid gap-4 md:grid-cols-4">
         <MetricTile icon={UserCheckIcon} label="Hoàn thiện hồ sơ" value={`${score}%`} hint="Dựa trên thông tin, khu vực và chứng chỉ." />
-        <MetricTile icon={ShieldCheckIcon} label="Trạng thái xác minh" value={profile.verification_status.replace('_', ' ')} hint="Quyết định khả năng nhận lớp." tone={profile.verification_status === 'VERIFIED' ? 'success' : 'warning'} />
+        <MetricTile icon={ShieldCheckIcon} label="Trạng thái xác minh" value={verificationStatusLabel(profile.verification_status)} hint="Quyết định khả năng nhận lớp." tone={profile.verification_status === 'VERIFIED' ? 'success' : 'warning'} />
         <MetricTile icon={ShieldCheckIcon} label="Chứng chỉ đã duyệt" value={approvedQualifications} hint="Tăng độ tin cậy với học viên." tone="success" />
-        <MetricTile icon={WalletIcon} label="Đang chờ duyệt" value={pendingQualifications} hint="Staff cần kiểm tra tài liệu." tone="warning" />
+        <MetricTile icon={WalletIcon} label="Đang chờ duyệt" value={pendingQualifications} hint="Nhân viên cần kiểm tra tài liệu." tone="warning" />
       </div>
 
       <SegmentedTabs
@@ -154,7 +171,7 @@ export default function TutorProfile({ initialTab = 'profile' }: { initialTab?: 
 
       {activeTab === 'profile' ? (
         <div className="grid gap-6 xl:grid-cols-[1fr_0.82fr]">
-          <SectionPanel title="Thông tin nghề nghiệp" description="Nội dung này là phần học viên và staff dùng để đánh giá mức phù hợp.">
+          <SectionPanel title="Thông tin nghề nghiệp" description="Nội dung này là phần học viên và nhân viên dùng để đánh giá mức phù hợp.">
             <form onSubmit={handleSave} className="space-y-5">
               <Textarea
                 label="Giới thiệu bản thân"
@@ -184,8 +201,8 @@ export default function TutorProfile({ initialTab = 'profile' }: { initialTab?: 
                 <Select
                   label="Hình thức dạy"
                   options={[
-                    { value: 'BOTH', label: 'Online và trực tiếp' },
-                    { value: 'ONLINE', label: 'Online' },
+                    { value: 'BOTH', label: 'Trực tuyến và trực tiếp' },
+                    { value: 'ONLINE', label: 'Trực tuyến' },
                     { value: 'OFFLINE', label: 'Trực tiếp' },
                   ]}
                   value={form.teaching_mode || 'BOTH'}
@@ -211,7 +228,7 @@ export default function TutorProfile({ initialTab = 'profile' }: { initialTab?: 
                 </div>
                 <div className="min-w-0">
                   <h3 className="truncate text-xl font-semibold">{form.qualification_level || 'Gia sư Lumin'}</h3>
-                  <p className="text-sm text-white/65">{form.years_experience ?? 0} năm kinh nghiệm · {form.teaching_mode || 'BOTH'}</p>
+                  <p className="text-sm text-white/65">{form.years_experience ?? 0} năm kinh nghiệm · {teachingModeLabel(form.teaching_mode)}</p>
                   <label className="mt-2 inline-block cursor-pointer text-xs font-semibold text-primary-200 hover:text-white">
                     Đổi ảnh đại diện
                     <input
@@ -305,6 +322,10 @@ function AddQualificationModal({ open, onClose, onAdded, toast }: { open: boolea
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!form.file_url.trim()) {
+      toast('error', 'Vui lòng tải minh chứng trước khi thêm chứng chỉ.');
+      return;
+    }
     setSaving(true);
     try {
       await tutorApi.addQualification(form);

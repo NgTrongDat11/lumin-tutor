@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   classApi,
@@ -7,6 +7,7 @@ import {
   subjectApi,
   tutorApi,
   privateRequestApi,
+  messageApi,
   extractErrorMessage,
 } from '../../services/api';
 import type {
@@ -16,6 +17,7 @@ import type {
   RecommendationResponse,
   SubjectResponse,
   TutorPublicResponse,
+  PrivateRequestResponse,
   LearningNeedCreate,
   LearningNeedResponse,
   LearningNeedScheduleCreate,
@@ -24,7 +26,7 @@ import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
 import Modal from '../../components/ui/Modal';
 import { getStatusBadge } from '../../components/ui/Badge';
-import { PageLoading } from '../../components/ui/Spinner';
+import { StudentDashboardSkeleton } from '../../components/ui/Skeleton';
 import Avatar from '../../components/ui/Avatar';
 import Input from '../../components/ui/Input';
 import Select from '../../components/ui/Select';
@@ -82,7 +84,7 @@ function matchesMode(value: string | null | undefined, filter: ModeFilter) {
 function getClassModeMeta(course: CourseClassResponse) {
   if (course.mode === 'ONLINE') {
     return {
-      label: 'Online',
+      label: 'Trực tuyến',
       detail: 'Học trực tuyến',
       classes: 'border-sky-200 bg-sky-50 text-sky-700',
     };
@@ -96,13 +98,13 @@ function getClassModeMeta(course: CourseClassResponse) {
   }
   return {
     label: 'Linh hoạt',
-    detail: course.location ? `Online hoặc ${course.location}` : 'Online hoặc trực tiếp',
+    detail: course.location ? `Trực tuyến hoặc ${course.location}` : 'Trực tuyến hoặc trực tiếp',
     classes: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   };
 }
 
 function getTeachingModeLabel(mode: string | null | undefined) {
-  if (mode === 'ONLINE') return 'Online';
+  if (mode === 'ONLINE') return 'Trực tuyến';
   if (mode === 'OFFLINE') return 'Trực tiếp';
   return 'Linh hoạt';
 }
@@ -111,14 +113,156 @@ function getCourseTotalFee(course: CourseClassResponse) {
   return Number(course.fee_per_session_per_student || 0) * course.total_sessions;
 }
 
-function formatMatchScore(score: string | number | null | undefined) {
+function getMatchScoreNumber(score: string | number | null | undefined) {
   const value = Number(score || 0);
-  if (!Number.isFinite(value)) return '0';
-  return value.toFixed(0);
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, value));
+}
+
+function getMatchScoreMeta(score: string | number | null | undefined) {
+  const percent = getMatchScoreNumber(score);
+
+  if (percent >= 80) {
+    return {
+      percent,
+      label: 'Rất phù hợp',
+      description: 'Khớp hầu hết tiêu chí chính trong nhu cầu học.',
+      badgeClass: 'border-emerald-200 bg-emerald-700 text-white',
+      softClass: 'border-emerald-100 bg-emerald-50 text-emerald-900',
+      barClass: 'bg-emerald-600',
+    };
+  }
+
+  if (percent >= 60) {
+    return {
+      percent,
+      label: 'Phù hợp',
+      description: 'Khớp nhiều tiêu chí, vẫn nên kiểm tra thêm lịch và chi phí.',
+      badgeClass: 'border-primary-200 bg-primary-700 text-white',
+      softClass: 'border-primary-100 bg-primary-50 text-primary-900',
+      barClass: 'bg-primary-600',
+    };
+  }
+
+  if (percent >= 40) {
+    return {
+      percent,
+      label: 'Cần cân nhắc',
+      description: 'Có tiêu chí khớp, nhưng còn dữ liệu hoặc điều kiện cần xác nhận.',
+      badgeClass: 'border-amber-200 bg-amber-100 text-amber-800',
+      softClass: 'border-amber-100 bg-amber-50 text-amber-900',
+      barClass: 'bg-amber-500',
+    };
+  }
+
+  return {
+    percent,
+    label: 'Ít phù hợp',
+    description: 'Chỉ khớp một phần nhỏ tiêu chí hiện tại.',
+    badgeClass: 'border-border-light bg-surface-secondary text-text-secondary',
+    softClass: 'border-border-light bg-surface-secondary text-text-secondary',
+    barClass: 'bg-text-tertiary',
+  };
+}
+
+function getScoreSignals(score: string | number | null | undefined, reasons: string[]) {
+  const text = reasons.join(' ').toLowerCase();
+  const missingSignals: string[] = [];
+
+  if (!/(ngân sách|học phí|phí|giá|budget|fee)/i.test(text)) {
+    missingSignals.push('Chưa thấy tiêu chí ngân sách được chấm rõ');
+  }
+  if (!/(lịch|thời gian|buổi|rảnh|schedule|slot)/i.test(text)) {
+    missingSignals.push('Chưa thấy lịch rảnh khớp rõ');
+  }
+  if (!/(hình thức|trực tuyến|trực tiếp|online|offline|khu vực|mode)/i.test(text)) {
+    missingSignals.push('Cần kiểm tra thêm hình thức hoặc khu vực học');
+  }
+
+  if (getMatchScoreNumber(score) >= 80 && missingSignals.length === 0) {
+    missingSignals.push('Không có tiêu chí yếu nổi bật trong dữ liệu gợi ý');
+  }
+
+  if (missingSignals.length === 0) {
+    missingSignals.push('Một số tiêu chí phụ chưa đủ dữ liệu để nâng điểm');
+  }
+
+  return {
+    positive: reasons.length > 0 ? reasons : ['Hệ thống đã có dữ liệu gợi ý nhưng chưa trả về lý do chi tiết'],
+    missing: missingSignals,
+  };
+}
+
+function MatchScoreBadge({ score }: { score: string | number | null | undefined }) {
+  const meta = getMatchScoreMeta(score);
+
+  return (
+    <div className="flex shrink-0 flex-col items-start gap-1 sm:items-end">
+      <span className={`rounded-full border px-3 py-1 text-xs font-extrabold ${meta.badgeClass}`}>
+        {meta.percent.toFixed(0)}% phù hợp
+      </span>
+      <span className="text-[11px] font-bold uppercase tracking-wide text-text-tertiary">{meta.label}</span>
+    </div>
+  );
+}
+
+function ScoreExplanationPanel({
+  score,
+  reasons,
+  compact,
+}: {
+  score: string | number | null | undefined;
+  reasons: string[];
+  compact?: boolean;
+}) {
+  const meta = getMatchScoreMeta(score);
+  const signals = getScoreSignals(score, reasons);
+  const positiveReasons = signals.positive.slice(0, compact ? 3 : 5);
+  const missingReasons = signals.missing.slice(0, compact ? 2 : 3);
+
+  return (
+    <div className={`rounded-xl border p-3 ${meta.softClass}`}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-extrabold text-text-primary">Vì sao ra {meta.percent.toFixed(0)}%?</p>
+          <p className="mt-1 text-xs leading-5 text-text-secondary">{meta.description}</p>
+        </div>
+        <div className="h-2 w-full overflow-hidden rounded-full bg-white/80 sm:w-32">
+          <div className={`h-full rounded-full ${meta.barClass}`} style={{ width: `${meta.percent}%` }} />
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div>
+          <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-text-tertiary">Điểm cộng</p>
+          <div className="space-y-1">
+            {positiveReasons.map((reason, index) => (
+              <p key={`${reason}-${index}`} className="flex gap-2 text-xs leading-5 text-text-secondary">
+                <CheckCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary-600" />
+                <span>{reason}</span>
+              </p>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-text-tertiary">Cần kiểm tra</p>
+          <div className="space-y-1">
+            {missingReasons.map((reason, index) => (
+              <p key={`${reason}-${index}`} className="flex gap-2 text-xs leading-5 text-text-secondary">
+                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-text-tertiary" />
+                <span>{reason}</span>
+              </p>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function getModeLabel(mode: string | null | undefined) {
-  if (mode === 'ONLINE') return 'Online';
+  if (mode === 'ONLINE') return 'Trực tuyến';
   if (mode === 'OFFLINE') return 'Trực tiếp';
   return 'Linh hoạt';
 }
@@ -137,8 +281,8 @@ function getTimeSlotLabel(slot: string | null | undefined) {
 }
 
 export default function StudentDashboard() {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { toast } = useToast();
   
   const [subjects, setSubjects] = useState<SubjectResponse[]>([]);
@@ -170,7 +314,7 @@ export default function StudentDashboard() {
       const rec = await recommendationApi.forNeed(need.id);
       setRecommendation(rec);
     } catch {
-      toast('error', 'Không thể tải kết quả Smart Match.');
+      toast('error', 'Không thể tải kết quả gợi ý.');
     } finally {
       setRecLoading(false);
     }
@@ -337,17 +481,17 @@ export default function StudentDashboard() {
     setSearchParams(nextParams, { replace: true });
   };
 
-  if (loading) return <PageLoading />;
+  if (loading) return <StudentDashboardSkeleton />;
 
   return (
     <div className="mx-auto w-full animate-slide-up space-y-6 md:space-y-8">
-      {/* Smart Match Banner */}
+      {/* Recommendation banner */}
       <section className="relative overflow-hidden rounded-xl bg-primary-950 text-white shadow-lg">
         <img src={dashboardHero} alt="" className="absolute inset-0 h-full w-full object-cover opacity-30" />
         <div className="relative z-10 grid gap-5 p-5 md:gap-8 md:p-8 lg:grid-cols-[1.05fr_0.95fr] lg:p-10">
           <div className="max-w-2xl">
             <h1 className="text-xl font-bold leading-snug tracking-tight md:text-4xl">
-              Khám phá lớp học và Smart Match trong một luồng rõ ràng.
+              Khám phá lớp học và gợi ý thông minh trong một luồng rõ ràng.
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/70 md:text-base">
               Tìm thủ công khi bạn đã biết mình cần gì, hoặc tạo cấu hình để hệ thống chấm điểm theo môn học, cấp lớp, ngân sách, hình thức và lịch rảnh.
@@ -380,7 +524,7 @@ export default function StudentDashboard() {
             <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
               <SmartMatchStep index="1" title="Tạo cấu hình" desc="Chọn môn, mục tiêu, hình thức, ngân sách và lịch rảnh." />
               <SmartMatchStep index="2" title="Xem tiêu chí" desc="Bạn thấy hệ thống đang dùng dữ liệu nào để so khớp." />
-              <SmartMatchStep index="3" title="Đọc lý do" desc="Mỗi kết quả có điểm match và các lý do cụ thể." />
+              <SmartMatchStep index="3" title="Đọc lý do" desc="Mỗi kết quả có điểm phù hợp và các lý do cụ thể." />
             </div>
           </div>
         </div>
@@ -434,7 +578,7 @@ export default function StudentDashboard() {
                       : 'text-text-secondary hover:text-text-primary'
                   }`}
                 >
-                  {mode === 'ALL' ? 'Mọi hình thức' : mode === 'ONLINE' ? 'Online' : 'Trực tiếp'}
+                  {mode === 'ALL' ? 'Mọi hình thức' : mode === 'ONLINE' ? 'Trực tuyến' : 'Trực tiếp'}
                 </button>
               ))}
             </div>
@@ -475,24 +619,41 @@ export default function StudentDashboard() {
         </div>
       </section>
 
+      <section className="grid gap-3 md:grid-cols-2">
+        <article className="rounded-xl border border-border-light bg-white p-4 shadow-xs">
+          <p className="text-xs font-bold uppercase tracking-wide text-primary-600">Lớp nhóm</p>
+          <h3 className="mt-2 font-semibold text-text-primary">Đăng ký lớp đã được trung tâm mở</h3>
+          <p className="mt-2 text-sm leading-6 text-text-secondary">
+            Bạn chọn lớp có sẵn, gửi đăng ký, trung tâm duyệt trước khi thanh toán và xếp lịch.
+          </p>
+        </article>
+        <article className="rounded-xl border border-primary-100 bg-primary-50 p-4 shadow-xs">
+          <p className="text-xs font-bold uppercase tracking-wide text-primary-700">Học 1-1</p>
+          <h3 className="mt-2 font-semibold text-text-primary">Gửi yêu cầu riêng cho gia sư</h3>
+          <p className="mt-2 text-sm leading-6 text-text-secondary">
+            Bạn không tạo lớp mới. Bạn chọn gia sư, gửi yêu cầu, trao đổi trong tin nhắn, rồi thanh toán khi gia sư xác nhận.
+          </p>
+        </article>
+      </section>
+
       {/* Tabs */}
       <section className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-text-primary">
-            {activeTab === 'RECOMMENDATION' ? 'Gợi ý thông minh (AI Match)' : 'Kết quả khám phá'}
+            {activeTab === 'RECOMMENDATION' ? 'Gợi ý thông minh' : 'Tìm lớp nhóm hoặc gia sư 1-1'}
           </h2>
           <p className="mt-1 text-sm text-text-secondary">
             {activeTab === 'RECOMMENDATION'
               ? 'Chọn một cấu hình để xem hệ thống chấm điểm và lý do phù hợp.'
-              : submittedSearch ? `Đang hiển thị kết quả cho "${submittedSearch}".` : 'Lớp học được ưu tiên trước, sau đó là gia sư.'}
+              : submittedSearch ? `Đang hiển thị kết quả cho "${submittedSearch}".` : 'Lớp nhóm là đăng ký lớp có sẵn; gia sư 1-1 là gửi yêu cầu riêng để trao đổi.'}
           </p>
         </div>
 
         <div className="custom-scrollbar flex w-full max-w-full overflow-x-auto rounded-full border border-border bg-white p-1 shadow-sm md:w-auto">
           {([
             ['ALL', `Tất cả`],
-            ['CLASS', `Lớp học`],
-            ['TUTOR', `Gia sư`],
+            ['CLASS', `Lớp nhóm`],
+            ['TUTOR', `Học 1-1`],
             ['RECOMMENDATION', `Gợi ý của tôi`],
           ] as [ResultTab, string][]).map(([tab, label]) => {
             if (tab === 'RECOMMENDATION' && learningNeeds.length === 0) return null;
@@ -530,7 +691,7 @@ export default function StudentDashboard() {
         <Card padding="lg" className="text-center bg-white py-16">
           <div className="mx-auto mb-4 h-12 w-12 rounded-full border-4 border-primary-200 border-t-primary-600 animate-spin" />
           <p className="text-sm font-semibold text-text-secondary">Đang so khớp cấu hình với gia sư và lớp đang mở...</p>
-          <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-text-tertiary">Hệ thống đang lọc theo môn học, hình thức học, ngân sách, lịch rảnh, rating và kinh nghiệm rồi sắp xếp theo điểm phù hợp.</p>
+          <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-text-tertiary">Hệ thống đang lọc theo môn học, hình thức học, ngân sách, lịch rảnh, đánh giá và kinh nghiệm rồi sắp xếp theo điểm phù hợp.</p>
         </Card>
       ) : activeTab === 'RECOMMENDATION' && recommendation && !hasRecommendationResults ? (
         <RecommendationResultsShell activeNeed={activeNeed} subjects={subjects} recommendation={recommendation}>
@@ -548,7 +709,7 @@ export default function StudentDashboard() {
           </div>
           <h3 className="text-xl font-bold text-text-primary">Chưa tìm thấy kết quả</h3>
           <p className="mt-2 text-sm text-text-secondary max-w-sm mx-auto">
-            Hãy thử đổi từ khóa hoặc dùng tính năng Smart Match để AI tự động tìm kiếm cho bạn.
+            Hãy thử đổi từ khóa hoặc dùng tính năng gợi ý thông minh để hệ thống tự động tìm kiếm cho bạn.
           </p>
         </Card>
       ) : (
@@ -647,7 +808,7 @@ export default function StudentDashboard() {
         </div>
       )}
 
-      {/* Smart Match Modal */}
+      {/* Recommendation modal */}
       <CreateNeedModal
         open={showSmartMatch}
         onClose={() => setShowSmartMatch(false)}
@@ -668,9 +829,15 @@ export default function StudentDashboard() {
           onClose={() => setTutorForRequest(null)}
           tutor={tutorForRequest.tutor}
           activeNeed={activeNeed}
-          onCreated={() => {
+          onCreated={async (request) => {
+            const thread = await messageApi.ensureThread({
+              private_request_id: request.id,
+              title: `Yêu cầu 1-1 với ${tutorForRequest.tutor.full_name}`,
+            }).catch(() => undefined);
             setTutorForRequest(null);
-            navigate('/student/my-learning');
+            if (thread) {
+              navigate(`/student/messages?threadId=${thread.id}`);
+            }
           }}
           toast={toast}
         />
@@ -690,10 +857,13 @@ export default function StudentDashboard() {
         }}
         onRegisterClass={async (classId) => {
           try {
-            await classApi.register(classId, { learning_need_id: activeNeed?.id });
-            toast('success', 'Đăng ký lớp nhóm thành công! Chờ ban quản trị duyệt.');
+            const registration = await classApi.register(classId, { learning_need_id: activeNeed?.id });
+            await messageApi.ensureThread({
+              class_registration_id: registration.id,
+              title: 'Trao đổi về đăng ký lớp nhóm',
+            }).catch(() => undefined);
+            toast('success', 'Đã gửi đăng ký lớp nhóm. Trung tâm sẽ xác nhận trước bước thanh toán.');
             setDetailTarget(null);
-            navigate('/student/my-learning');
           } catch (err: any) {
             toast('error', 'Đăng ký thất bại: ' + extractErrorMessage(err));
           }
@@ -788,7 +958,7 @@ function RecommendationWorkspace({
           <div className="rounded-lg border border-dashed border-border bg-surface-secondary p-8 text-center">
             <h4 className="font-bold text-text-primary">Bạn chưa có cấu hình học tập</h4>
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-text-secondary">
-              Tạo cấu hình để Smart Match có dữ liệu so khớp thay vì chỉ duyệt danh sách thủ công.
+              Tạo cấu hình để hệ thống có dữ liệu so khớp thay vì chỉ duyệt danh sách thủ công.
             </p>
             <div className="mt-4">
               <Button onClick={onCreate}>Tạo cấu hình</Button>
@@ -833,19 +1003,19 @@ function RecommendationWorkspace({
 
       <Card padding="lg" className="bg-white">
         <div className="mb-5">
-          <h3 className="text-xl font-bold tracking-tight text-text-primary">Smart Match chấm điểm như thế nào?</h3>
+          <h3 className="text-xl font-bold tracking-tight text-text-primary">Gợi ý thông minh chấm điểm như thế nào?</h3>
           <p className="mt-1 text-sm leading-6 text-text-secondary">
-            Đây là thuật toán hybrid trong backend: lọc ứng viên không phù hợp trước, sau đó cộng điểm theo từng tiêu chí.
+            Hệ thống lọc ứng viên không phù hợp trước, sau đó cộng điểm theo từng tiêu chí.
           </p>
         </div>
         <div className="space-y-3">
           {[
             ['Môn học', '30 điểm', 'Bắt buộc khớp môn khi cấu hình có môn học.'],
-            ['Cấp lớp', '15 điểm', 'Ưu tiên gia sư/lớp có grade level gần mục tiêu.'],
+            ['Cấp lớp', '15 điểm', 'Ưu tiên gia sư/lớp có cấp học gần mục tiêu.'],
             ['Ngân sách', '15 điểm', 'Ưu tiên học phí nằm trong mức bạn khai báo.'],
             ['Lịch rảnh', '15 điểm', 'So lịch mong muốn với lịch rảnh của gia sư.'],
-            ['Hình thức', '10 điểm', 'Online, trực tiếp hoặc linh hoạt.'],
-            ['Đánh giá và kinh nghiệm', '15 điểm', 'Cộng thêm theo rating, số lượt đánh giá và năm kinh nghiệm.'],
+            ['Hình thức', '10 điểm', 'Trực tuyến, trực tiếp hoặc linh hoạt.'],
+            ['Đánh giá và kinh nghiệm', '15 điểm', 'Cộng thêm theo điểm đánh giá, số lượt đánh giá và năm kinh nghiệm.'],
           ].map(([label, value, desc]) => (
             <div key={label} className="flex gap-3 rounded-lg border border-border-light bg-surface-secondary p-3">
               <CheckCircleIcon className="mt-0.5 h-5 w-5 shrink-0 text-primary-700" />
@@ -880,7 +1050,7 @@ function RecommendationResultsShell({
       <div className="rounded-xl border border-primary-100 bg-white p-5 shadow-xs">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-700">Smart Match result</p>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-700">Kết quả gợi ý</p>
             <h3 className="mt-2 text-2xl font-bold tracking-tight text-text-primary">
               {activeNeed ? `${getSubjectName(subjects, activeNeed.subject_id)} ${activeNeed.grade_level ? `· ${activeNeed.grade_level}` : ''}` : 'Kết quả gợi ý'}
             </h3>
@@ -903,7 +1073,7 @@ function RecommendationResultsShell({
           </div>
         </div>
         <div className="mt-4 rounded-lg border border-border-light bg-surface-secondary p-3 text-xs leading-5 text-text-secondary">
-          <strong className="text-text-primary">Cách đọc kết quả:</strong> điểm match càng cao nghĩa là càng khớp tiêu chí. Lý do phù hợp bên dưới từng card lấy trực tiếp từ các bước chấm điểm của backend.
+          <strong className="text-text-primary">Cách đọc điểm:</strong> phần trăm là mức khớp tổng hợp từ môn/lớp, hình thức học, ngân sách, lịch rảnh và dữ liệu lớp hoặc gia sư. Mỗi thẻ có phần “Vì sao ra điểm này?” để thấy tiêu chí nào kéo điểm lên và tiêu chí nào cần kiểm tra thêm.
         </div>
       </div>
       {children}
@@ -1023,8 +1193,8 @@ function RecommendedClassCard({
   const totalFee = getCourseTotalFee(course);
 
   return (
-    <article className="group flex h-full cursor-pointer flex-col rounded-xl border border-primary-100 bg-white p-5 shadow-sm transition-all hover:-translate-y-1 hover:border-primary-300 hover:shadow-lg" onClick={onOpen}>
-      <div className="mb-4 flex items-start justify-between gap-3">
+    <article className="group flex h-full cursor-pointer flex-col rounded-xl border border-border bg-white p-4 shadow-sm transition-all hover:-translate-y-1 hover:border-primary-200 hover:shadow-lg sm:p-5" onClick={onOpen}>
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="mb-1 text-xs font-bold uppercase tracking-[0.14em] text-primary-600">
             {subjectName || 'Lớp nhóm'} · {course.grade_level}
@@ -1033,9 +1203,7 @@ function RecommendedClassCard({
             {course.title}
           </h4>
         </div>
-        <span className="shrink-0 rounded-full bg-primary-700 px-3 py-1 text-xs font-extrabold text-white">
-          {formatMatchScore(rec.score)}% Match
-        </span>
+        <MatchScoreBadge score={rec.score} />
       </div>
 
       <div className="space-y-2 rounded-lg border border-border-light bg-surface-secondary p-3">
@@ -1068,19 +1236,9 @@ function RecommendedClassCard({
         </div>
       </div>
 
-      {rec.reasons.length > 0 && (
-        <div className="mt-4 border-t border-border-light pt-3">
-          <p className="mb-1 text-xs font-bold uppercase text-text-tertiary">Lý do phù hợp</p>
-          <div className="space-y-1">
-            {rec.reasons.slice(0, 3).map((reason) => (
-              <p key={reason} className="flex gap-2 text-xs leading-5 text-text-secondary">
-                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary-500" />
-                <span>{reason}</span>
-              </p>
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="mt-4">
+        <ScoreExplanationPanel score={rec.score} reasons={rec.reasons} compact />
+      </div>
 
       <button
         type="button"
@@ -1105,23 +1263,17 @@ function TutorCard({ rec, isRecommendation, onOpen }: { rec: RecommendedTutor; i
   const modeLabel = getTeachingModeLabel(rec.tutor.teaching_mode);
 
   return (
-    <article className="flex h-full flex-col rounded-xl border border-border bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:border-primary-200 cursor-pointer" onClick={onOpen}>
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3">
+    <article className="flex h-full cursor-pointer flex-col rounded-xl border border-border bg-white p-4 shadow-sm transition-all hover:-translate-y-1 hover:border-primary-200 hover:shadow-lg sm:p-6" onClick={onOpen}>
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
           <Avatar name={rec.tutor.full_name} size="lg" shape="square" />
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-600 mb-1">Gia sư 1-1</p>
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary-600 mb-1">Nhận yêu cầu 1-1</p>
             <h4 className="text-lg font-bold text-text-primary line-clamp-1">{rec.tutor.full_name}</h4>
             <p className="mt-1 text-xs font-bold text-text-tertiary">{modeLabel} · {rec.tutor.teaching_area || 'Chưa cập nhật khu vực'}</p>
           </div>
         </div>
-        {isRecommendation && (
-          <div className="shrink-0 flex flex-col items-end">
-            <span className="rounded-full bg-gradient-to-r from-amber-400 to-orange-500 px-3 py-1 text-xs font-bold text-white shadow-sm">
-              {formatMatchScore(rec.score)}% Match
-            </span>
-          </div>
-        )}
+        {isRecommendation && <MatchScoreBadge score={rec.score} />}
       </div>
       
       <p className="text-sm text-text-secondary line-clamp-2 min-h-[2.5rem] mb-4">
@@ -1152,16 +1304,7 @@ function TutorCard({ rec, isRecommendation, onOpen }: { rec: RecommendedTutor; i
           </div>
         )}
         
-        {isRecommendation && rec.reasons.length > 0 && (
-          <div className="pt-3 border-t border-border-light">
-            <p className="text-xs font-bold text-text-tertiary uppercase mb-1 flex items-center gap-1">
-              <span>✨</span> Lý do phù hợp
-            </p>
-            <p className="text-xs font-medium text-text-secondary line-clamp-2">
-              {rec.reasons[0]}
-            </p>
-          </div>
-        )}
+        {isRecommendation && <ScoreExplanationPanel score={rec.score} reasons={rec.reasons} compact />}
 
         <button
           type="button"
@@ -1257,24 +1400,17 @@ function DetailModal({
           )}
 
           {recommendationItem && (
-            <div className="rounded-xl border border-primary-100 bg-white p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="rounded-xl border border-border-light bg-white p-4">
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-primary-700">Điểm Smart Match</p>
-                  <p className="mt-1 text-3xl font-extrabold text-primary-800">{formatMatchScore(recommendationItem.score)}%</p>
+                  <p className="text-xs font-bold uppercase tracking-wide text-primary-700">Điểm phù hợp</p>
+                  <p className="mt-1 text-sm leading-6 text-text-secondary">
+                    Điểm được tính từ các tiêu chí trong nhu cầu học và dữ liệu lớp hiện có.
+                  </p>
                 </div>
-                <div className="min-w-0 flex-1 sm:max-w-md">
-                  <p className="text-sm font-bold text-text-primary">Vì sao lớp này được gợi ý?</p>
-                  <div className="mt-2 space-y-1.5">
-                    {recommendationItem.reasons.map((reason) => (
-                      <p key={reason} className="flex gap-2 text-sm leading-6 text-text-secondary">
-                        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary-500" />
-                        <span>{reason}</span>
-                      </p>
-                    ))}
-                  </div>
-                </div>
+                <MatchScoreBadge score={recommendationItem.score} />
               </div>
+              <ScoreExplanationPanel score={recommendationItem.score} reasons={recommendationItem.reasons} />
             </div>
           )}
 
@@ -1339,7 +1475,7 @@ function DetailModal({
         {/* Teaching info */}
         <div className="grid gap-3 sm:grid-cols-3">
           <InfoTile icon={BookOpenIcon} label="Hình thức" value={modeLabel} />
-          <InfoTile icon={UsersIcon} label="Trình độ" value={rec.tutor.qualification_level || 'N/A'} />
+          <InfoTile icon={UsersIcon} label="Trình độ" value={rec.tutor.qualification_level || 'Chưa cập nhật'} />
           <InfoTile icon={SearchIcon} label="Khu vực" value={rec.tutor.teaching_area || 'Chưa rõ'} />
         </div>
 
@@ -1379,19 +1515,10 @@ function DetailModal({
           </div>
         )}
 
-        {isRecommendation && rec.reasons.length > 0 && (
+        {isRecommendation && (
           <div>
-            <h4 className="text-sm font-bold text-text-primary mb-3 flex items-center gap-2">
-              <span className="text-lg">✨</span> Vì sao phù hợp với bạn?
-            </h4>
-            <div className="bg-primary-50 rounded-xl p-4 border border-primary-100 space-y-2">
-              {rec.reasons.map((reason, index) => (
-                <div key={index} className="flex gap-2 text-sm text-primary-900">
-                  <span className="font-bold text-primary-500">•</span>
-                  <span>{reason}</span>
-                </div>
-              ))}
-            </div>
+            <h4 className="text-sm font-bold text-text-primary mb-3">Vì sao gia sư này được gợi ý?</h4>
+            <ScoreExplanationPanel score={rec.score} reasons={rec.reasons} />
           </div>
         )}
       </div>
@@ -1411,7 +1538,7 @@ function InfoTile({ icon: Icon, label, value }: { icon: typeof BookOpenIcon; lab
   );
 }
 
-/* ── Create Need Modal (Smart Match) ───────────── */
+/* ── Create Need Modal ───────────── */
 function CreateNeedModal({
   open, onClose, subjects, onCreated, toast,
 }: {
@@ -1466,7 +1593,7 @@ function CreateNeedModal({
     setLoading(true);
     try {
       const need = await learningNeedApi.create(form);
-      toast('success', 'Đã khởi tạo hồ sơ AI Match thành công!');
+      toast('success', 'Đã khởi tạo hồ sơ gợi ý thành công!');
       onCreated(need);
     } catch {
       toast('error', 'Có lỗi xảy ra, vui lòng thử lại.');
@@ -1479,7 +1606,7 @@ function CreateNeedModal({
     <Modal
       open={open}
       onClose={handleClose}
-      title="Khởi tạo Cấu hình Smart Match"
+      title="Khởi tạo hồ sơ gợi ý"
       size="lg"
       footer={
         <>
@@ -1491,7 +1618,7 @@ function CreateNeedModal({
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="bg-primary-50 rounded-xl p-4 text-sm text-primary-800 border border-primary-100 flex gap-3">
           <span className="text-xl">🤖</span>
-          <p>Hệ thống AI sẽ phân tích nhu cầu của bạn và so khớp với dữ liệu hàng trăm gia sư để tìm ra người phù hợp nhất.</p>
+          <p>Hệ thống sẽ phân tích nhu cầu của bạn và so khớp với dữ liệu gia sư để tìm lựa chọn phù hợp nhất.</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -1522,8 +1649,8 @@ function CreateNeedModal({
             label="Hình thức gặp mặt"
             options={[
               { value: 'BOTH', label: 'Linh hoạt' },
-              { value: 'ONLINE', label: 'Chỉ Online' },
-              { value: 'OFFLINE', label: 'Chỉ Trực tiếp' },
+              { value: 'ONLINE', label: 'Chỉ trực tuyến' },
+              { value: 'OFFLINE', label: 'Chỉ trực tiếp' },
             ]}
             value={form.preferred_mode || 'BOTH'}
             onChange={(e) => updateField('preferred_mode', e.target.value)}
@@ -1577,7 +1704,7 @@ interface SendRequestModalProps {
   onClose: () => void;
   tutor: RecommendedTutor['tutor'];
   activeNeed: LearningNeedResponse | null;
-  onCreated: () => void;
+  onCreated: (request: PrivateRequestResponse) => void | Promise<void>;
   toast: (type: 'success' | 'error', msg: string) => void;
 }
 
@@ -1607,7 +1734,7 @@ function SendRequestModal({
     }
     setLoading(true);
     try {
-      await privateRequestApi.create({
+      const request = await privateRequestApi.create({
         tutor_id: tutor.id,
         learning_need_id: activeNeed?.id || undefined,
         subject_id: subjectId,
@@ -1616,10 +1743,10 @@ function SendRequestModal({
         requested_sessions: requestedSessions,
         mode: mode as any,
       });
-      toast('success', 'Đã gửi yêu cầu học 1-1 thành công!');
-      onCreated();
+      toast('success', 'Đã gửi yêu cầu học 1-1. Mở tin nhắn để trao đổi với gia sư.');
+      await onCreated(request);
     } catch (err) {
-      toast('error', 'Không thể gửi yêu cầu: ' + (err as any).message);
+      toast('error', 'Không thể gửi yêu cầu: ' + extractErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -1634,13 +1761,31 @@ function SendRequestModal({
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={loading}>Hủy</Button>
-          <Button onClick={handleSubmit} loading={loading}>Gửi yêu cầu</Button>
+          <Button onClick={handleSubmit} loading={loading}>Gửi yêu cầu và mở tin nhắn</Button>
         </>
       }
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="rounded-lg border border-primary-100 bg-primary-50 p-3">
+          <p className="text-sm font-semibold text-primary-900">Đây không phải tạo lớp mới</p>
+          <p className="mt-1 text-sm leading-6 text-primary-800">
+            Yêu cầu 1-1 là lời mời học riêng gửi tới gia sư. Sau khi gửi, hệ thống mở tin nhắn để bạn trao đổi lịch, mục tiêu và học phí trước khi thanh toán.
+          </p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {[
+            ['1', 'Gửi yêu cầu'],
+            ['2', 'Trao đổi với gia sư'],
+            ['3', 'Gia sư xác nhận'],
+          ].map(([step, label]) => (
+            <div key={step} className="rounded-lg border border-border-light bg-surface-secondary p-3">
+              <p className="text-xs font-bold text-primary-700">Bước {step}</p>
+              <p className="mt-1 text-xs font-semibold text-text-secondary">{label}</p>
+            </div>
+          ))}
+        </div>
         <div>
-          <label className="block text-sm font-bold text-text-secondary mb-1">Môn học đăng ký</label>
+          <label className="block text-sm font-bold text-text-secondary mb-1">Môn/bậc học muốn học</label>
           <Select
             value={subjectId}
             onChange={(e) => setSubjectId(Number(e.target.value))}
@@ -1652,11 +1797,14 @@ function SendRequestModal({
               </option>
             ))}
           </Select>
+          <p className="mt-1 text-xs leading-5 text-text-tertiary">
+            Danh sách này lấy từ các môn gia sư đã đăng ký dạy và được nhân viên duyệt.
+          </p>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-bold text-text-secondary mb-1">Số buổi học dự kiến</label>
+          <label className="block text-sm font-bold text-text-secondary mb-1">Số buổi học dự kiến</label>
             <Input
               type="number"
               min={1}
@@ -1668,8 +1816,8 @@ function SendRequestModal({
           <div>
             <label className="block text-sm font-bold text-text-secondary mb-1">Hình thức học</label>
             <Select value={mode} onChange={(e) => setMode(e.target.value)}>
-              <option value="ONLINE">Trực tuyến (Online)</option>
-              <option value="OFFLINE">Trực tiếp (Offline)</option>
+              <option value="ONLINE">Trực tuyến</option>
+              <option value="OFFLINE">Trực tiếp</option>
             </Select>
           </div>
         </div>
@@ -1682,6 +1830,10 @@ function SendRequestModal({
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
           />
+        </div>
+
+        <div className="rounded-lg border border-border-light bg-surface-secondary p-3 text-sm leading-6 text-text-secondary">
+          Hệ thống chỉ tạo khoản thanh toán sau khi gia sư xác nhận yêu cầu. Số tiền tạm tính bằng học phí mỗi buổi nhân với số buổi dự kiến.
         </div>
       </form>
     </Modal>

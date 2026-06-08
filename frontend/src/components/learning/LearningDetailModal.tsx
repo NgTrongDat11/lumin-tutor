@@ -79,7 +79,7 @@ export function LearningDetailModal({ target, onClose }: { target: { type: 'CLAS
               <div className="rounded-xl border border-border-light bg-surface-secondary p-4 flex flex-col items-center text-center">
                 <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm mb-2"><UsersIcon className="h-4 w-4 text-primary-600" /></div>
                 <p className="text-xs font-bold text-text-tertiary uppercase mb-1">Trình độ</p>
-                <p className="font-bold text-text-primary line-clamp-1">{data.tutor.qualification_level || 'N/A'}</p>
+                <p className="font-bold text-text-primary line-clamp-1">{data.tutor.qualification_level || 'Chưa cập nhật'}</p>
               </div>
               <div className="rounded-xl border border-border-light bg-surface-secondary p-4 flex flex-col items-center text-center">
                 <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm mb-2"><SearchIcon className="h-4 w-4 text-primary-600" /></div>

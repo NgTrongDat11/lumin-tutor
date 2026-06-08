@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+﻿import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { classApi, subjectApi } from '../../services/api';
 import type { ClassRegistrationResponse, CourseClassResponse, SubjectResponse, TutorApplicationResponse } from '../../types';
 import Button from '../../components/ui/Button';
@@ -7,7 +7,7 @@ import Modal from '../../components/ui/Modal';
 import Select from '../../components/ui/Select';
 import Textarea from '../../components/ui/Textarea';
 import { getStatusBadge } from '../../components/ui/Badge';
-import { PageLoading } from '../../components/ui/Spinner';
+import { DashboardSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 import { BookOpenIcon, ClipboardCheckIcon, LayersIcon, UsersIcon } from '../../components/ui/Icons';
 import { EmptyPanel, MetricTile, PortalPage, SectionPanel, SegmentedTabs } from '../../components/portal/PortalPage';
@@ -83,7 +83,7 @@ export default function StaffAcademic({ initialTab = 'classes' }: { initialTab?:
     active: classes.filter((c) => ['READY', 'ONGOING'].includes(c.status)).length,
   }), [classes]);
 
-  if (loading) return <PageLoading />;
+  if (loading) return <DashboardSkeleton />;
 
   return (
     <PortalPage
@@ -96,8 +96,8 @@ export default function StaffAcademic({ initialTab = 'classes' }: { initialTab?:
       <div className="grid gap-4 md:grid-cols-4">
         <MetricTile icon={BookOpenIcon} label="Môn học" value={subjects.length} hint="Danh mục hệ thống." />
         <MetricTile icon={LayersIcon} label="Đang chuẩn bị" value={classStats.draft + classStats.recruiting} hint="Cần mở tuyển hoặc chọn GS." tone="warning" />
-        <MetricTile icon={UsersIcon} label="Tuyển HV" value={classStats.enrolling} hint="Đang mở đăng ký." tone="primary" />
-        <MetricTile icon={ClipboardCheckIcon} label="Active" value={classStats.active} hint="READY hoặc ONGOING." tone="success" />
+        <MetricTile icon={UsersIcon} label="Tuyển học viên" value={classStats.enrolling} hint="Đang mở đăng ký." tone="primary" />
+        <MetricTile icon={ClipboardCheckIcon} label="Đang mở" value={classStats.active} hint="Sẵn sàng hoặc đang học." tone="success" />
       </div>
 
       <SegmentedTabs
@@ -126,7 +126,7 @@ export default function StaffAcademic({ initialTab = 'classes' }: { initialTab?:
                       </div>
                       <p className="mt-0.5 text-xs text-text-tertiary">
                         {course.grade_level} · {course.total_sessions} buổi · {currency(course.fee_per_session_per_student)}/buổi · {course.min_students}-{course.max_students} HV
-                        · {course.mode === 'ONLINE' ? 'Online' : course.location || 'Trực tiếp'}
+                        · {course.mode === 'ONLINE' ? 'Trực tuyến' : course.location || 'Trực tiếp'}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -229,7 +229,7 @@ function CreateClassModal({ open, onClose, subjects, onCreated, toast }: { open:
         <div className="grid gap-4 sm:grid-cols-3">
           <Input label="Tối thiểu HV" type="number" value={form.min_students} onChange={(event) => setForm((c) => ({ ...c, min_students: Number(event.target.value) }))} />
           <Input label="Tối đa HV" type="number" value={form.max_students} onChange={(event) => setForm((c) => ({ ...c, max_students: Number(event.target.value) }))} />
-          <Select label="Hình thức" options={[{ value: 'OFFLINE', label: 'Trực tiếp' }, { value: 'ONLINE', label: 'Online' }]} value={form.mode} onChange={(event) => setForm((c) => ({ ...c, mode: event.target.value }))} />
+          <Select label="Hình thức" options={[{ value: 'OFFLINE', label: 'Trực tiếp' }, { value: 'ONLINE', label: 'Trực tuyến' }]} value={form.mode} onChange={(event) => setForm((c) => ({ ...c, mode: event.target.value }))} />
         </div>
         <Input label="Địa điểm" placeholder="VD: 123 Nguyễn Văn A, Q.1" value={form.location} onChange={(event) => setForm((c) => ({ ...c, location: event.target.value }))} />
       </form>

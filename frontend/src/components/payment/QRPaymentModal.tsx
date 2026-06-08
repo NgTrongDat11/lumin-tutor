@@ -97,7 +97,7 @@ export default function QRPaymentModal({ open, payment, onClose, onPaid }: QRPay
             <p className="text-2xl font-extrabold text-primary-700 mt-1">{currency(displayAmount)}</p>
             {payment.is_test_mode && (
               <p className="text-xs text-warning-600 mt-1 font-medium">
-                Test: chuyển {currency(payment.qr_amount)} thay vì {currency(displayAmount)}
+                Chế độ thử nghiệm: chuyển {currency(payment.qr_amount)} thay vì {currency(displayAmount)}
               </p>
             )}
           </div>
@@ -127,7 +127,7 @@ export default function QRPaymentModal({ open, payment, onClose, onPaid }: QRPay
 
           {/* Instruction */}
           <p className="text-xs text-text-tertiary text-center leading-relaxed max-w-[240px]">
-            Mở app ngân hàng → Quét mã → Bấm chuyển.<br />
+            Mở ứng dụng ngân hàng → Quét mã → Bấm chuyển.<br />
             Hệ thống tự xác nhận sau vài giây.
           </p>
 

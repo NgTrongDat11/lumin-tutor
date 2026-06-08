@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { privateRequestApi } from '../../services/api';
 import type { PrivateRequestResponse } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -8,7 +8,7 @@ import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 import { getStatusBadge } from '../../components/ui/Badge';
 import EmptyState from '../../components/ui/EmptyState';
-import { PageLoading } from '../../components/ui/Spinner';
+import { CardGridSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 
 export default function TutorPrivateRequests() {
@@ -26,7 +26,7 @@ export default function TutorPrivateRequests() {
     catch { toast('error', 'Thao tác thất bại'); }
   };
 
-  if (loading) return <PageLoading />;
+  if (loading) return <CardGridSkeleton />;
 
   const pending = requests.filter((r) => r.status === 'SENT');
   const others = requests.filter((r) => r.status !== 'SENT');

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+﻿import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { scheduleApi, tutorApi } from '../../services/api';
 import type { LearningSessionResponse, TutorAvailabilityResponse } from '../../types';
 import Button from '../../components/ui/Button';
@@ -6,7 +6,7 @@ import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 import Select from '../../components/ui/Select';
 import { getStatusBadge } from '../../components/ui/Badge';
-import { PageLoading } from '../../components/ui/Spinner';
+import { ScheduleSkeleton } from '../../components/ui/Skeleton';
 import { useToast } from '../../components/ui/Toast';
 import { CalendarIcon, ClockIcon, UserCheckIcon } from '../../components/ui/Icons';
 import { EmptyPanel, MetricTile, PortalPage, SectionPanel, SegmentedTabs, WeekPlanner, type WeekEvent } from '../../components/portal/PortalPage';
@@ -30,6 +30,7 @@ export default function TutorSchedule({ initialTab = 'teaching' }: { initialTab?
   const [availabilities, setAvailabilities] = useState<TutorAvailabilityResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingAvailability, setEditingAvailability] = useState<TutorAvailabilityResponse | null>(null);
   const { toast } = useToast();
 
   const load = () => {
@@ -66,6 +67,16 @@ export default function TutorSchedule({ initialTab = 'teaching' }: { initialTab?
     }
   };
 
+  const openAvailabilityModal = (slot?: TutorAvailabilityResponse) => {
+    setEditingAvailability(slot || null);
+    setShowAdd(true);
+  };
+
+  const closeAvailabilityModal = () => {
+    setShowAdd(false);
+    setEditingAvailability(null);
+  };
+
   const scheduledSessions = useMemo(() => sessions.filter((session) => session.status === 'SCHEDULED'), [sessions]);
   const completedSessions = useMemo(() => sessions.filter((session) => session.status === 'COMPLETED'), [sessions]);
 
@@ -84,23 +95,23 @@ export default function TutorSchedule({ initialTab = 'teaching' }: { initialTab?
     return availabilities.map((slot) => ({
       id: `availability-${slot.id}`,
       dayOfWeek: slot.day_of_week,
-      title: slot.mode === 'ONLINE' ? 'Dạy online' : slot.mode === 'OFFLINE' ? 'Dạy trực tiếp' : 'Online hoặc trực tiếp',
+      title: slot.mode === 'ONLINE' ? 'Dạy trực tuyến' : slot.mode === 'OFFLINE' ? 'Dạy trực tiếp' : 'Trực tuyến hoặc trực tiếp',
       time: timeRange(slot.start_time, slot.end_time),
       tone: 'success',
     }));
   }, [availabilities]);
 
-  if (loading) return <PageLoading />;
+  if (loading) return <ScheduleSkeleton />;
 
   return (
     <PortalPage
       title="Lịch dạy"
       description="Một nơi để xem tuần dạy hiện tại và khai báo lịch rảnh, tránh phải nhảy qua nhiều màn."
-      actions={activeTab === 'availability' ? <Button onClick={() => setShowAdd(true)}>Thêm lịch rảnh</Button> : undefined}
+      actions={activeTab === 'availability' ? <Button onClick={() => openAvailabilityModal()}>Thêm lịch rảnh</Button> : undefined}
     >
       <div className="grid gap-4 md:grid-cols-3">
         <MetricTile icon={CalendarIcon} label="Buổi sắp dạy" value={scheduledSessions.length} hint="Các buổi đang ở trạng thái đã lên lịch." />
-        <MetricTile icon={ClockIcon} label="Khung giờ rảnh" value={availabilities.length} hint="Dùng để staff và học viên xếp lịch nhanh hơn." tone="success" />
+        <MetricTile icon={ClockIcon} label="Khung giờ rảnh" value={availabilities.length} hint="Dùng để gợi ý và ghép lịch, không tự đổi buổi học đã chốt." tone="success" />
         <MetricTile icon={UserCheckIcon} label="Đã hoàn thành" value={completedSessions.length} hint="Tổng buổi đã được điểm danh hoàn thành." tone="neutral" />
       </div>
 
@@ -121,7 +132,7 @@ export default function TutorSchedule({ initialTab = 'teaching' }: { initialTab?
 
           <SectionPanel title="Danh sách buổi học" description="Các buổi sắp tới có thể điểm danh nhanh sau khi kết thúc.">
             {sessions.length === 0 ? (
-              <EmptyPanel title="Chưa có buổi học nào" description="Khi staff tạo lịch học, các buổi sẽ xuất hiện tại đây." />
+              <EmptyPanel title="Chưa có buổi học nào" description="Khi nhân viên tạo lịch học, các buổi sẽ xuất hiện tại đây." />
             ) : (
               <div className="space-y-3">
                 {sessions.map((session) => (
@@ -155,13 +166,13 @@ export default function TutorSchedule({ initialTab = 'teaching' }: { initialTab?
         </div>
       ) : (
         <div className="space-y-6">
-          <SectionPanel title="Lịch rảnh theo tuần" description="Các slot này là dữ liệu nền để ghép lớp và nhận yêu cầu 1-1.">
+          <SectionPanel title="Lịch rảnh theo tuần" description="Các khung giờ này là dữ liệu nền để ghép lớp, gợi ý gia sư và nhận yêu cầu 1-1. Lịch học đã tạo sẽ không tự thay đổi theo phần này.">
             <WeekPlanner events={availabilityEvents} emptyText="Chưa khai báo" />
           </SectionPanel>
 
-          <SectionPanel title="Quản lý slot rảnh" description="Xóa nhanh các khung giờ không còn phù hợp.">
+          <SectionPanel title="Quản lý khung giờ rảnh" description="Sửa hoặc xóa nhanh các khung giờ không còn phù hợp.">
             {availabilities.length === 0 ? (
-              <EmptyPanel title="Chưa khai báo lịch rảnh" description="Thêm ít nhất một khung giờ để tăng khả năng được xếp lớp." action={<Button onClick={() => setShowAdd(true)}>Thêm lịch rảnh</Button>} />
+              <EmptyPanel title="Chưa khai báo lịch rảnh" description="Thêm ít nhất một khung giờ để tăng khả năng được xếp lớp." action={<Button onClick={() => openAvailabilityModal()}>Thêm lịch rảnh</Button>} />
             ) : (
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {availabilities.map((slot) => (
@@ -170,11 +181,16 @@ export default function TutorSchedule({ initialTab = 'teaching' }: { initialTab?
                     <p className="mt-1 text-sm text-text-secondary">{timeRange(slot.start_time, slot.end_time)}</p>
                     <div className="mt-4 flex items-center justify-between gap-3">
                       <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-text-secondary">
-                        {slot.mode === 'ONLINE' ? 'Online' : slot.mode === 'OFFLINE' ? 'Trực tiếp' : 'Linh hoạt'}
+                        {slot.mode === 'ONLINE' ? 'Trực tuyến' : slot.mode === 'OFFLINE' ? 'Trực tiếp' : 'Linh hoạt'}
                       </span>
-                      <Button size="sm" variant="ghost" className="text-danger-600 hover:bg-danger-50" onClick={() => handleDeleteAvailability(slot.id)}>
-                        Xóa
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" variant="ghost" onClick={() => openAvailabilityModal(slot)}>
+                          Sửa
+                        </Button>
+                        <Button size="sm" variant="ghost" className="text-danger-600 hover:bg-danger-50" onClick={() => handleDeleteAvailability(slot.id)}>
+                          Xóa
+                        </Button>
+                      </div>
                     </div>
                   </article>
                 ))}
@@ -184,29 +200,71 @@ export default function TutorSchedule({ initialTab = 'teaching' }: { initialTab?
         </div>
       )}
 
-      <AddAvailabilityModal open={showAdd} onClose={() => setShowAdd(false)} onAdded={() => { setShowAdd(false); load(); }} toast={toast} />
+      <AvailabilityModal
+        open={showAdd}
+        availability={editingAvailability}
+        onClose={closeAvailabilityModal}
+        onSaved={() => {
+          closeAvailabilityModal();
+          load();
+        }}
+        toast={toast}
+      />
     </PortalPage>
   );
 }
 
-function AddAvailabilityModal({ open, onClose, onAdded, toast }: { open: boolean; onClose: () => void; onAdded: () => void; toast: (t: 'success' | 'error', m: string) => void }) {
+function AvailabilityModal({
+  open,
+  availability,
+  onClose,
+  onSaved,
+  toast,
+}: {
+  open: boolean;
+  availability: TutorAvailabilityResponse | null;
+  onClose: () => void;
+  onSaved: () => void;
+  toast: (t: 'success' | 'error', m: string) => void;
+}) {
   const [form, setForm] = useState({ day_of_week: 2, start_time: '08:00', end_time: '10:00', mode: 'BOTH' });
   const [saving, setSaving] = useState(false);
+  const isEditing = Boolean(availability);
+
+  useEffect(() => {
+    if (!open) return;
+    setForm({
+      day_of_week: availability?.day_of_week || 2,
+      start_time: availability?.start_time.slice(0, 5) || '08:00',
+      end_time: availability?.end_time.slice(0, 5) || '10:00',
+      mode: availability?.mode || 'BOTH',
+    });
+  }, [availability, open]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (form.start_time >= form.end_time) {
+      toast('error', 'Giờ kết thúc phải sau giờ bắt đầu');
+      return;
+    }
+
     setSaving(true);
     try {
-      await tutorApi.addAvailability({
+      const payload = {
         day_of_week: form.day_of_week,
         start_time: form.start_time,
         end_time: form.end_time,
         mode: form.mode as 'ONLINE' | 'OFFLINE' | 'BOTH',
-      });
-      toast('success', 'Đã thêm lịch rảnh');
-      onAdded();
+      };
+      if (availability) {
+        await tutorApi.updateAvailability(availability.id, payload);
+      } else {
+        await tutorApi.addAvailability(payload);
+      }
+      toast('success', isEditing ? 'Đã cập nhật lịch rảnh' : 'Đã thêm lịch rảnh');
+      onSaved();
     } catch {
-      toast('error', 'Thêm lịch thất bại');
+      toast('error', isEditing ? 'Cập nhật lịch thất bại' : 'Thêm lịch thất bại');
     } finally {
       setSaving(false);
     }
@@ -216,11 +274,13 @@ function AddAvailabilityModal({ open, onClose, onAdded, toast }: { open: boolean
     <Modal
       open={open}
       onClose={onClose}
-      title="Thêm lịch rảnh"
+      title={isEditing ? 'Sửa lịch rảnh' : 'Thêm lịch rảnh'}
       footer={(
         <>
           <Button variant="outline" onClick={onClose}>Hủy</Button>
-          <Button loading={saving} onClick={(event) => handleSubmit(event as unknown as FormEvent)}>Thêm lịch</Button>
+          <Button loading={saving} onClick={(event) => handleSubmit(event as unknown as FormEvent)}>
+            {isEditing ? 'Lưu thay đổi' : 'Thêm lịch'}
+          </Button>
         </>
       )}
     >
@@ -239,7 +299,7 @@ function AddAvailabilityModal({ open, onClose, onAdded, toast }: { open: boolean
           label="Hình thức"
           options={[
             { value: 'BOTH', label: 'Linh hoạt' },
-            { value: 'ONLINE', label: 'Online' },
+            { value: 'ONLINE', label: 'Trực tuyến' },
             { value: 'OFFLINE', label: 'Trực tiếp' },
           ]}
           value={form.mode}
